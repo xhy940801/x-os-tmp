@@ -1,0 +1,6 @@
+bin/*
+obj/*
+dep/*
+bochsout.txt
+os.symbols
+os.symbols.origin
