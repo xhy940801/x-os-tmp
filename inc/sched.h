@@ -58,6 +58,8 @@ struct process_info_t
     struct process_info_t* brother;
     int last_errno;
     int sub_errno;
+    uint32_t owner_id;
+    uint32_t group_id;
     uint32_t sign;
     //for-wait
     struct sleep_desc_t sleep_info;
