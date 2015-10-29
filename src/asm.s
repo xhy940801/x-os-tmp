@@ -8,6 +8,7 @@ global _inb
 global _inw
 
 global _ltr
+global _lcr3
 
 _sti:
     sti
@@ -52,4 +53,9 @@ _inw:
 _ltr:
     mov eax, [esp + 4]
     ltr ax
+    ret
+
+_lcr3:
+    mov eax, [esp + 4]
+    mov cr3, eax
     ret

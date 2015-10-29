@@ -5,14 +5,14 @@
 
 #define MEM_START 0xc0000000
 
-typedef struct mem_desc
+struct mem_desc_t
 {
     uint16_t active;
     uint16_t share;
     uint16_t flags;
     uint16_t unused;
     void* point;
-} mem_desc_t;
+};
 
 enum
 {
@@ -24,10 +24,15 @@ enum
     MEM_FLAGS_S = 0x0020,
     MEM_FLAGS_C = 0x0040
 };
-
-void move_bios_mem();
-
-void init_mem_desc();
+void init_mem_module();
 
 void* kgetpersistedmem(size_t size);
 void* kgetpersistedpage(size_t size);
+
+uint32_t get_free_mem_size();
+
+//get 2 ^ n pages
+void* get_pages(size_t n, uint16_t share, uint16_t flags);
+void free_pages(void* p, size_t n);
+
+void flush_page_table();

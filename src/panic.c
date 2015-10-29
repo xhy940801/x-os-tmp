@@ -14,5 +14,3 @@ void _static_assert_func(const char* name, const char* file, unsigned int line, 
             ", line %u, function: %s", name, file, line, func);
     while(1);
 }
-
-

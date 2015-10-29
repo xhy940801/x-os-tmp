@@ -2,10 +2,10 @@
 
 #include "stdint.h"
 
-typedef struct
+struct sys_params_t
 {
     uint32_t memsize;
-} sys_params_t;
+};
 
 void init_sysparams();
-sys_params_t* get_sysparams();
+struct sys_params_t* get_sysparams();

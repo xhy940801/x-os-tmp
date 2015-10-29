@@ -7,108 +7,58 @@
 #include "string.h"
 #include "limits.h"
 #include "sysparams.h"
+#include "asm.h"
+#include "sched.h"
+#include "buddy.h"
 
 extern char _end[];
-static mem_desc_t* mem_descs = NULL;
-static mem_desc_t* free_mem_desc_head;
-static uint32_t free_page_count;
+static struct mem_desc_t* mem_descs = NULL;
+static struct mem_desc_t* free_mem_desc_head;
+static struct ksemaphore_desc_t mem_semaphore;
 
-//return 0 if not free page
-mem_desc_t* getonefreepage_unblocking(uint16_t share, uint16_t flags)
+#define KMEM_START 0xc0000000
+
+static struct
 {
-    if(free_mem_desc_head == NULL)
-        return NULL;
-    mem_desc_t* cur = free_mem_desc_head;
-    cur->active = USHRT_MAX;
-    cur->share = share;
-    cur->flags = flags;
-    cur->unused = 0;
-    free_mem_desc_head = (mem_desc_t*) cur->point;
-    cur->point = NULL;
-    --free_page_count;
-    return cur;
-}
+    uint32_t end;
+    uint32_t capacity;
+} persisted_mem_desc;
 
-void mapping_page(uint32_t* page_catalog_table, uint32_t dst, uint32_t src, uint8_t type)
+static struct
 {
-    kassert(page_catalog_table[dst >> 22] & 0x01);
-    uint32_t* page_table = (uint32_t*) (page_catalog_table[dst >> 22] & 0xfffff000);
-    page_table[(dst >> 12) & 0x3ff] = (src & 0xfffff000) | type;
-}
+    uint32_t cur_mem_pos;
+} persisted_pagemem_desc;
 
-void move_bios_mem()
+static void init_mem_desc(uint32_t pagecount)
 {
-    _memset((void*) 0x5000, 0, 0x1000);
-    for(uint32_t dst = MEM_START + 1023 * 1024 * 1024 + 640 * 1024, src = 640 * 1024;
-            src < 1024 * 1024; src += 4096, dst += 4096)
-        mapping_page((uint32_t*) 0, dst, src, 3);
+    _memset(mem_descs, 0, sizeof(struct mem_desc_t) * pagecount);
+    kassert(persisted_mem_desc.capacity % 4096 == 0);
+    uint32_t hasUsed = (persisted_mem_desc.capacity - KMEM_START) / 0x1000;
+    printk("hasUsed [%u]\n", hasUsed);
 
-    uint32_t pagecount = get_sysparams()->memsize / (4096);
-    for(uint32_t dst = 640 * 1024 + MEM_START, src = (pagecount - 96) * 4096;
-            dst < 1024 * 1024 + MEM_START; dst += 4096, src += 4096)
-        mapping_page((uint32_t*) 0, dst, src, 3);
-}
-
-void* kgetpersistedmem(size_t size)
-{
-    static uint32_t cur_mem_pos = ((uint32_t) _end);
-    static uint32_t cur_mem_capacity = MEM_START + 16 * 1024 * 1024;
-    kassert(!(size & 3));
-    void* pos = (void*) cur_mem_pos;
-    do
-    {
-        if(cur_mem_pos + size < cur_mem_capacity)
-        {
-            cur_mem_pos += size;
-            _memset(pos, 0, size);
-            return pos;
-        }
-        kassert(mem_descs);
-        mem_desc_t* desc = getonefreepage_unblocking(1, MEM_FLAGS_P | MEM_FLAGS_K | MEM_FLAGS_L);
-        kassert(desc);
-        mapping_page((uint32_t*) 0, cur_mem_capacity, (desc - mem_descs) * 4096, 3);
-        cur_mem_capacity += 4096;
-    } while(1);
-}
-
-void* kgetpersistedpage(size_t size)
-{
-    static uint32_t cur_mem_pos = 0xffea5000;
-    while(size--)
-    {
-        cur_mem_pos -= 4096;
-        mem_desc_t* desc = getonefreepage_unblocking(1, MEM_FLAGS_P | MEM_FLAGS_K | MEM_FLAGS_L);
-        kassert(desc);
-        mapping_page((uint32_t*) 0, cur_mem_pos, (desc - mem_descs) * 4096, 3);
-    }
-    _memset((void*) cur_mem_pos, 0, size * 4096);
-    return (void*) cur_mem_pos;
-}
-
-void init_mem_desc()
-{
-    uint32_t end = (uint32_t) _end;
-    printk("kernel end at %u\n", end);
-    uint32_t pagecount = get_sysparams()->memsize / (4096);
-    kassert(pagecount * sizeof(mem_desc_t) < 16 * 1024 * 1024 - end);
-    mem_descs = kgetpersistedmem(pagecount * sizeof(mem_desc_t));
-    for(uint32_t i = 0; i < pagecount - 96 - 251; ++i)
-    {
-        _memset(mem_descs + i, 0, sizeof(mem_desc_t));
+    //less 640k
+    for(size_t i = 0; i < 160; ++i)
         mem_descs[i].point = mem_descs + i + 1;
-    }
-    mem_descs[pagecount - 96 - 251 - 1].point = NULL;
-    for(uint32_t i = pagecount - 96 - 251, offset = 768 + 4; i < pagecount - 96; ++i, ++offset)
+    //640k-1m
+    for(size_t i = 160; i < 160 + 96; ++i)
     {
-        uint32_t* catalog = (uint32_t*) 0;
-        catalog[offset] = (i << 12) | 0x03;
+        mem_descs[i].active = USHRT_MAX;
+        mem_descs[i].share = 1;
+        mem_descs[i].flags = MEM_FLAGS_P | MEM_FLAGS_K | MEM_FLAGS_L;
+        mem_descs[i].unused = 0;
+        mem_descs[i].point = NULL;
+    }
+    //1m-2m
+    for(size_t i = 256; i < 256 + 256; ++i)
+    {
         mem_descs[i].active = USHRT_MAX;
         mem_descs[i].share = 1;
         mem_descs[i].flags = MEM_FLAGS_P | MEM_FLAGS_K | MEM_FLAGS_L | MEM_FLAGS_T;
         mem_descs[i].unused = 0;
         mem_descs[i].point = NULL;
     }
-    for(uint32_t i = pagecount - 96; i < pagecount; ++i)
+    //2m-end
+    for(size_t i = 512; i < 256 + hasUsed; ++i)
     {
         mem_descs[i].active = USHRT_MAX;
         mem_descs[i].share = 1;
@@ -116,22 +66,188 @@ void init_mem_desc()
         mem_descs[i].unused = 0;
         mem_descs[i].point = NULL;
     }
-    for(uint32_t i = 0; i < 4096; ++i)
+    //last-free
+    for(size_t i = 256 + hasUsed; i < pagecount; ++i)
+        mem_descs[i].point = mem_descs + i + 1;
+    mem_descs[159].point = mem_descs + 256 + hasUsed;
+    mem_descs[pagecount - 1].point = NULL;
+    mem_descs[512].flags |= MEM_FLAGS_T;
+
+    free_mem_desc_head = mem_descs;
+    ksemaphore_init(&mem_semaphore, 160 + pagecount - 256 - hasUsed);
+}
+
+static void init_alloc_descs()
+{
+    persisted_pagemem_desc.cur_mem_pos = 0xffea5000;
+}
+
+static inline void mapping_page(uint32_t dst, uint32_t src, uint8_t type)
+{
+    kassert(dst % 4096 == 0 && src % 4096 == 0 && type < 8);
+    uint32_t* page_table = (uint32_t*) (KMEM_START);
+    page_table[(dst - KMEM_START) >> 12] = src | type;
+}
+
+static inline void unmapping_page(uint32_t dst)
+{
+    kassert(dst % 4096 == 0);
+    uint32_t* page_table = (uint32_t*) (KMEM_START);
+    page_table[(dst - KMEM_START) >> 12] = 0;
+}
+
+static inline uint32_t get_physical_addr(uint32_t dst)
+{
+    uint32_t* page_table = (uint32_t*) (KMEM_START);
+    return page_table[(dst - KMEM_START) >> 12] & 0xfffff000;
+}
+
+//return 0 if not free page
+static struct mem_desc_t* getonefreepage_unblocking(uint16_t share, uint16_t flags)
+{
+    if(free_mem_desc_head == NULL)
+        return NULL;
+#ifdef NDEBUG
+    ksemaphore_down(&mem_semaphore, 1, 0);
+#else
+    int rs = ksemaphore_down(&mem_semaphore, 1, -1);
+    kassert(rs == 1);
+#endif
+    struct mem_desc_t* cur = free_mem_desc_head;
+    cur->active = USHRT_MAX;
+    cur->share = share;
+    cur->flags = flags;
+    cur->unused = 0;
+    free_mem_desc_head = (struct mem_desc_t*) cur->point;
+    cur->point = NULL;
+    return cur;
+}
+
+static struct mem_desc_t* getonefreepage(uint16_t share, uint16_t flags)
+{
+    ksemaphore_down(&mem_semaphore, 1, 0);
+    kassert(free_mem_desc_head != NULL);
+    struct mem_desc_t* cur = free_mem_desc_head;
+    cur->active = USHRT_MAX;
+    cur->share = share;
+    cur->flags = flags;
+    cur->unused = 0;
+    free_mem_desc_head = (struct mem_desc_t*) cur->point;
+    cur->point = NULL;
+    return cur;
+}
+
+static void freeonepage(struct mem_desc_t* desc)
+{
+    kassert(desc->flags & MEM_FLAGS_P);
+    desc->flags = 0;
+    desc->point = (void*) free_mem_desc_head;
+    free_mem_desc_head = desc;
+    ksemaphore_up(&mem_semaphore, 1);
+}
+
+static void clear_page_table()
+{
+    uint32_t* page_table = (uint32_t*) (KMEM_START);
+    uint32_t start_pos = (persisted_mem_desc.capacity - KMEM_START) >> 12;
+    for(size_t i = start_pos; i < 4096; ++i)
+        page_table[i] = 0;
+    _lcr3(cur_process->cpu_state.catalog_table_p);
+}
+
+void init_mem_module()
+{
+    persisted_mem_desc.end = (uint32_t) _end;
+    printk("kernel end at %u\n", persisted_mem_desc.end);
+    uint32_t pagecount = get_sysparams()->memsize / (4096);
+    mem_descs = (struct mem_desc_t*) persisted_mem_desc.end;
+
+    persisted_mem_desc.end += sizeof(struct mem_desc_t) * pagecount;
+    persisted_mem_desc.capacity = (persisted_mem_desc.end + 4095) & 0xfffff000;
+    kassert(persisted_mem_desc.end < KMEM_START + 0x01000000);
+    clear_page_table();
+    init_mem_desc(pagecount);
+    init_alloc_descs();
+}
+
+
+void* kgetpersistedmem(size_t size)
+{
+    kassert(!(size & 3));
+    void* pos = (void*) persisted_mem_desc.end;
+    do
     {
-        mem_descs[i].active = USHRT_MAX;
-        mem_descs[i].share = 1;
-        mem_descs[i].flags = MEM_FLAGS_P | MEM_FLAGS_K | MEM_FLAGS_L;
-        mem_descs[i].unused = 0;
-        mem_descs[i].point = NULL;
+        if(persisted_mem_desc.end + size < persisted_mem_desc.capacity)
+        {
+            persisted_mem_desc.end += size;
+            _memset(pos, 0, size);
+            return pos;
+        }
+        kassert(mem_descs);
+        struct mem_desc_t* desc = getonefreepage_unblocking(1, MEM_FLAGS_P | MEM_FLAGS_K | MEM_FLAGS_L);
+        kassert(desc);
+        mapping_page(persisted_mem_desc.capacity, (desc - mem_descs) * 4096, 3);
+        persisted_mem_desc.capacity += 4096;
+    } while(1);
+}
+
+void* kgetpersistedpage(size_t size)
+{
+    while(size--)
+    {
+        persisted_pagemem_desc.cur_mem_pos -= 4096;
+        struct mem_desc_t* desc = getonefreepage_unblocking(1, MEM_FLAGS_P | MEM_FLAGS_K | MEM_FLAGS_L);
+        kassert(desc);
+        mapping_page(persisted_pagemem_desc.cur_mem_pos, (desc - mem_descs) * 4096, 3);
     }
-    for(uint32_t i = 0; i < 6; ++i)
-        mem_descs[i].flags |= MEM_FLAGS_T;
-    free_mem_desc_head = mem_descs + 4096;
-    free_page_count = pagecount - 4096 - 96 - 251;
-    //test
-    uint32_t ckcount = 0;
-    for(mem_desc_t* head = free_mem_desc_head; head != NULL; head = (mem_desc_t*) head->point)
-        ++ckcount;
-    kassert(ckcount == free_page_count);
-    //test-end
+    _memset((void*) persisted_pagemem_desc.cur_mem_pos, 0, size * 4096);
+    return (void*) persisted_pagemem_desc.cur_mem_pos;
+}
+
+uint32_t get_free_mem_size()
+{
+    uint32_t fc = 0;
+    struct mem_desc_t* p = free_mem_desc_head;
+    while(p)
+    {
+        ++fc;
+        p = (struct mem_desc_t*) p->point;
+    }
+    kassert(fc == mem_semaphore.surplus);
+    return fc * 4096;
+}
+
+void* get_pages(size_t n, uint16_t share, uint16_t flags)
+{
+    void* p = get_address_area(n);
+    size_t pcount = 1 << n;
+    uint32_t cp = (uint32_t) p;
+    for(size_t i = 0; i < pcount; ++i)
+    {
+        struct mem_desc_t* desc = getonefreepage(share, flags);
+        mapping_page(cp, (desc - mem_descs) * 4096, 7);
+        cp += 4096;
+    }
+    _memset(p, 0, pcount * 4096);
+    return p;
+}
+
+void free_pages(void* p, size_t n)
+{
+    size_t pcount = 1 << n;
+    uint32_t cp = (uint32_t) p;
+    for(size_t i = 0; i < pcount; ++i)
+    {
+        struct mem_desc_t* desc = mem_descs + (get_physical_addr(cp) / 4096);
+        unmapping_page(cp);
+        freeonepage(desc);
+        cp += 4096;
+    }
+    free_address_area(p, n);
+    flush_page_table();
+}
+
+void flush_page_table()
+{
+    _lcr3(cur_process->cpu_state.catalog_table_p);
 }
