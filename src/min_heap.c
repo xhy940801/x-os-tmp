@@ -14,7 +14,7 @@ void min_heap_init(int* heap)
         do
         {
             size_t d = j << 1;
-            if(heap[j] < heap[d] && heap[j] < heap[d + 1])
+            if(val < heap[d] && val < heap[d + 1])
                 break;
             if(heap[d] < heap[d + 1])
             {
@@ -71,4 +71,5 @@ void min_heap_pop(int* heap)
         }
     }
     heap[i] = val;
+    --heap[0];
 }
