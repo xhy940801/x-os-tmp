@@ -7,6 +7,13 @@ typedef int32_t off_t;
 
 enum
 {
+    VFS_FDAUTH_EXEC     = 0x01,
+    VFS_FDAUTH_WRITE    = 0x02,
+    VFS_FDAUTH_READ     = 0x04
+};
+
+enum
+{
     VFS_TYPE_NONE       = 0,
     VFS_TYPE_XFS        = 2
 };
@@ -34,11 +41,8 @@ struct vfs_inode_desc_t;
 
 struct fd_struct_t
 {
-    union
-    {
-        struct vfs_inode_desc_t* inode;
-        int next_free_fd;
-    };
+    struct vfs_inode_desc_t* inode;
+    uint32_t auth;
 };
 
 struct vfs_inode_desc_t

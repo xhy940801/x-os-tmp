@@ -126,10 +126,47 @@ ssize_t sys_write(int fd, const char* buf, size_t len)
         cur_process->last_errno = EPERM;
         return -1;
     }
+    struct fd_struct_t fd_struct;
+    if(fd < 16)
+        fd_struct = cur_process->fds[fd];
+    else
+        fd_struct = cur_process->fd_append[fd - 16];
+    if(fd_struct.auth & VFS_FDAUTH_WRITE)
+        return vfs_write(fd_struct.inode, buf, len);
+    cur_process->last_errno = EPERM;
+    return -1;
+}
+
+ssize_t sys_read(int fd, char* buf, size_t len)
+{
+    if(fd < 0 || fd > cur_process->fd_max)
+    {
+        cur_process->last_errno = EPERM;
+        return -1;
+    }
+    struct fd_struct_t fd_struct;
+    if(fd < 16)
+        fd_struct = cur_process->fds[fd];
+    else
+        fd_struct = cur_process->fd_append[fd - 16];
+    if(fd_struct.auth & VFS_FDAUTH_READ)
+        return vfs_read(fd_struct.inode, buf, len);
+    cur_process->last_errno = EPERM;
+    return -1;
+}
+
+int sys_fsync(int fd)
+{
+    if(fd < 0 || fd > cur_process->fd_max)
+    {
+        cur_process->last_errno = EPERM;
+        return -1;
+    }
     struct vfs_inode_desc_t* inode;
     if(fd < 16)
         inode = cur_process->fds[fd].inode;
     else
         inode = cur_process->fd_append[fd - 16].inode;
-    return vfs_write(inode, buf, len);
+    return vfs_fsync(inode);
 }
+

@@ -60,9 +60,10 @@ void turn_to_process1()
     process1info.cpu_state.esp = (uint32_t) (system_stack + 4096);
     process1info.cpu_state.catalog_table_p = 0x00200000;
     process1info.catalog_table_v = (void*) 0xc0000000;
-    process1info.fds[1].inode = get_tty0_inode();
-    process1info.fds[2].inode = get_tty0_inode();
-    process1info.fds[2].inode->open_count = 2;
+    
+    open_tty0(VFS_FDAUTH_WRITE, &(process1info.fds[1]));
+    open_tty0(VFS_FDAUTH_WRITE, &(process1info.fds[2]));
+
     process1info.fd_max = 15;
     pcinfo_rb_tree_init(&pc_rb_tree_head, &(process1info.rb_node));
 
