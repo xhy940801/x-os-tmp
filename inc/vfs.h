@@ -5,6 +5,8 @@
 
 typedef int32_t off_t;
 
+#define INNER_FD_COUNT 8
+
 enum
 {
     VFS_FDAUTH_EXEC     = 0x01,

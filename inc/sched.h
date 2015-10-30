@@ -68,10 +68,12 @@ struct process_info_t
     uint16_t rest_time;
     //fd-info
     uint16_t fd_page_size;
-    struct fd_struct_t fds[16];
+    struct fd_struct_t fds[INNER_FD_COUNT];
     struct fd_struct_t* fd_append;
     int fd_max;
-    int fd_free_num;
+    int nxt_free_fd;
+    int* fd_heap;
+    uint32_t fd_free_num;
     //cpu state
     void* catalog_table_v;
     struct cpu_stat_t cpu_state;
