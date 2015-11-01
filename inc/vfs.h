@@ -71,6 +71,17 @@ struct vfs_desc_t
     int (*fsync) (struct vfs_inode_desc_t* inode);
 };
 
+struct fd_info_t
+{
+    uint16_t fd_page_size;
+    struct fd_struct_t fds[INNER_FD_COUNT];
+    struct fd_struct_t* fd_append;
+    int fd_max;
+    int nxt_free_fd;
+    int* fd_heap;
+    uint32_t fd_free_num;
+};
+
 void init_vfs_module();
 int vfs_register(struct vfs_desc_t* vfs, size_t num);
 
