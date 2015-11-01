@@ -1,0 +1,38 @@
+1.
+src/slab.c:55:21: warning: 'snode' may be used uninitialized in this function [-Wmaybe-uninitialized]
+         snode->next = NULL;
+                     ^
+        这里假定slab_capacity > 0于是snode不可能是NULL
+        struct slab_list_node_t* snode;
+        for(size_t i = 0; i < slab_slot_descs[n].slab_capacity; ++i)
+        {
+            snode = (struct slab_list_node_t*) slab_head;
+            slab_head += size;
+            snode->next = (struct slab_list_node_t*) slab_head;
+        }
+        snode->next = NULL;
+
+2.
+src/pcinfo_rb_tree.c:301:7: warning: 'onodec' may be used uninitialized in this function [-Wmaybe-uninitialized]
+     if(onodec == _RB_TREE_BLACK)
+       ^
+    这里第一步判断node->left != nil && node->right != nil
+    如果是的话这一步会调整树，让树至少一边为nil，所以onodec不可能未初始化
+    if (node->left != nil && node->right != nil)
+    {
+        ...
+    }
+    enum _rb_tree_color onodec;
+    if (node->right == nil)
+    {
+        ...
+        node = node->left;
+    }
+    else if(node->left == nil)
+    {
+        ...
+        node = node->right;
+    }
+
+    if(onodec == _RB_TREE_BLACK)
+     
