@@ -7,7 +7,9 @@
 enum
 {
     TTY0_STATE_NORMAL   = 0,
-    TTY0_STATE_SETTING  = 1
+    TTY0_STATE_SETTING  = 1, 
+    TTY0_STATE_START    = 2,
+    
 };
 
 struct tty0_vfs_inode_desc_t

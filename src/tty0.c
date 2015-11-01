@@ -8,7 +8,7 @@
 
 static struct tty0_vfs_inode_desc_t tty0_inode;
 static struct vfs_desc_t tty0_vfs;
-
+static char ctl_stack[10];
 static void _flush_cursor(struct tty0_vfs_inode_desc_t* inode)
 {
     char* pos = (char*) (inode->tty_base_addr + (inode->inode_base.pos << 1));
@@ -76,10 +76,100 @@ static int tty0_write(struct vfs_inode_desc_t* _inode, const char* buf, size_t l
                 inode->inode_base.pos -= 80;
             }
         }
+        else if(inode->state == TTY0_STATE_SETTING)
+        {
+            if(c == '[')
+            {
+                inode->state = TTY0_STATE_START;
+                _memset((void*) ctl_stack, '\0', 10);
+                continue;
+            }
+            else
+            {
+                inode->state = TTY0_STATE_NORMAL;
+                continue;
+            }
+        }
         else
         {
-            inode->color = c;
-            inode->state = TTY0_STATE_NORMAL;
+            char* pos = (char*) (inode->tty_base_addr + (inode->inode_base.pos << 1));
+                              pos[0] = inode->color;
+                               pos[1] = inode->color;
+                                ++inode->inode_base.pos;
+
+            if(c == ';' || c == 'm')
+            {
+                if(strlen(ctl_stack) == 2)
+                {
+                    if(ctl_stack[0] == '3' || ctl_stack[0] == '4')
+                    {
+                       int color = ctl_stack[1] - '0';
+                       if(color<8&&color>-1)
+                       {
+                           int k = 3;
+                           size_t offset = 0;
+                           if(ctl_stack[0] == '3')
+                               offset = 2;
+                           else
+                           {
+                               offset = 6;
+                           }
+                           while(k>0)
+                           {
+                               size_t m = color%2;
+                               if(m == 1)
+                               {
+                                   inode->color = inode->color|(m<<(k+offset-3));
+                               }
+                               else
+                               {
+                                   inode->color = inode->color&(~(1<<(k+offset-3)));
+                               }
+                               color = color>>1;
+                               k--;
+                           }
+                       }
+                       else
+                       {
+                            inode->state = TTY0_STATE_NORMAL;
+                            continue; 
+                       }
+                    }
+                }
+                else if(strlen(ctl_stack) == 1)
+                {
+                    if(ctl_stack[0] == '0')
+                    {
+                        _memset((void*)&inode->color, 0, 1);
+                        continue;
+                    }
+                    else
+                    {
+                        inode->state = TTY0_STATE_NORMAL;
+                        continue;
+                    }
+                }
+                else
+                {
+                    inode->state = TTY0_STATE_NORMAL;
+                    
+                }
+                if( c == 'm')
+                {
+                    inode->state = TTY0_STATE_NORMAL;
+                    continue;
+                }
+                if( c == ';')
+                {    
+                    inode->state = TTY0_STATE_START;
+                    _memset((void*) ctl_stack, '\0', 10);
+                    continue;
+                }
+             }
+             else
+             {
+                ctl_stack[strlen(ctl_stack)] = c;    
+             }
         }
     }
     _flush_cursor(inode);
