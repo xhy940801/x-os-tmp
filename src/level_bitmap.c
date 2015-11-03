@@ -82,3 +82,21 @@ ssize_t level_bitmap_get_min(struct level_bitmap_t* map)
     rs += npos;
     return rs;
 }
+
+ssize_t level_bitmap_get_max(struct level_bitmap_t* map)
+{
+    uint32_t* p = map->bitmaps;
+    if(*p == 0)
+        return -1;
+    ssize_t rs = 0;
+    for(size_t i = map->max_level; i > 0; --i)
+    {
+        size_t npos = _bsr(*p);
+        rs += npos;
+        rs <<= 5;
+        p += npos * level_jump_sizes[i] + 1;
+    }
+    size_t npos = _bsr(*p);
+    rs += npos;
+    return rs;
+}
