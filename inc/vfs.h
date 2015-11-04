@@ -77,9 +77,8 @@ struct fd_info_t
     struct fd_struct_t fds[INNER_FD_COUNT];
     struct fd_struct_t* fd_append;
     int fd_max;
-    int nxt_free_fd;
-    int* fd_heap;
-    uint32_t fd_free_num;
+    uint32_t innerbitmaps;
+    struct level_bitmap_t level_bitmap;
 };
 
 void init_vfs_module();
@@ -90,4 +89,9 @@ ssize_t vfs_read (struct vfs_inode_desc_t* inode, char* buf, size_t len);
 ssize_t vfs_write (struct vfs_inode_desc_t* inode, const char* buf, size_t len);
 int vfs_fsync (struct vfs_inode_desc_t* inode);
 
+void init_fd_info(struct fd_info_t* fd_info);
+void release_fd_info(struct fd_info_t* fd_info);
+
 ssize_t sys_write(int fd, const char* buf, size_t len);
+ssize_t sys_read(int fd, char* buf, size_t len);
+int sys_fsync(int fd);

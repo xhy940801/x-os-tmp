@@ -118,6 +118,19 @@ ssize_t vfs_fsync(struct vfs_inode_desc_t* inode)
     return vfs->fsync(inode);
 }
 
+void init_fd_info(struct fd_info_t* fd_info)
+{
+    _memset(fd_info, 0, sizeof(struct fd_info_t));
+    fd_info->fd_max = INNER_FD_COUNT - 1;
+    fd_info->innerbitmaps = 0xffffffff;
+    fd_info->level_bitmap.bitmaps = &(fd_info->innerbitmaps);
+    fd_info->level_bitmap.max_level = 0;
+}
+
+void release_fd_info(struct fd_info_t* fd_info)
+{
+    free_pages(fd_info->fd_append, fd_info->fd_page_count);
+}
 
 ssize_t sys_write(int fd, const char* buf, size_t len)
 {
