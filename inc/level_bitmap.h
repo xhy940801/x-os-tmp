@@ -15,3 +15,4 @@ int level_bitmap_bit_clear(struct level_bitmap_t* map, size_t bit);
 ssize_t level_bitmap_get_min(struct level_bitmap_t* map);
 ssize_t level_bitmap_get_max(struct level_bitmap_t* map);
 void level_bitmap_cpy(struct level_bitmap_t* dst, struct level_bitmap_t* src);
+void level_bitmap_batch_set(struct level_bitmap_t* map, size_t start, size_t end);

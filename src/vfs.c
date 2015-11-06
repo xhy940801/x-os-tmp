@@ -5,6 +5,7 @@
 
 #include "sched.h"
 #include "errno.h"
+#include "mem.h"
 
 static struct vfs_desc_t* vfs_desc_points[16];
 
@@ -122,14 +123,38 @@ void init_fd_info(struct fd_info_t* fd_info)
 {
     _memset(fd_info, 0, sizeof(struct fd_info_t));
     fd_info->fd_max = INNER_FD_COUNT - 1;
-    fd_info->innerbitmaps = 0xffffffff;
+    fd_info->innerbitmaps = (1 << INNER_FD_COUNT) - 1;
     fd_info->level_bitmap.bitmaps = &(fd_info->innerbitmaps);
-    fd_info->level_bitmap.max_level = 0;
 }
 
 void release_fd_info(struct fd_info_t* fd_info)
 {
-    free_pages(fd_info->fd_append, fd_info->fd_page_count);
+    free_pages(fd_info->fd_append, fd_info->fd_page_size);
+}
+
+void fd_alloc(struct fd_info_t* fd_info)
+{
+    ssize_t fd = level_bitmap_get_min(&(fd_info->level_bitmap));
+    if(fd < 0)
+    {
+        void* newpages = get_pages(fd_info->fd_page_size + 1, 1, MEM_FLAGS_P | MEM_FLAGS_K);
+        uint32_t pagesize = 4096 << (fd_info->fd_page_size + 1);
+        uint32_t fd_max = (pagesize - 20) * 31 / (31 * sizeof(struct fd_struct_t) + 4);
+        _memcpy(newpages, fd_info->fd_append, fd_info->fd_max * sizeof(struct fd_struct_t));
+        struct level_bitmap_t tmplb;
+        tmplb.bitmaps = (uint32_t*) (((char*) newpages) + fd_info->fd_max * sizeof(struct fd_struct_t));
+        tmplb.max_level = 4;
+        level_bitmap_cpy(&tmplb, &(fd_info->level_bitmap));
+        uint32_t maxtmp = fd_max;
+        tmplb.max_level = 0;
+        tmplb.bitmaps += 4;
+        while(maxtmp >>= 5)
+            --tmplb.bitmaps;
+        level_bitmap_batch_set(&tmplb, fd_info->fd_max, fd_max);
+        free_pages(fd_info->fd_append, fd_info->fd_page_size);
+        fd_info->fd_append = (struct fd_struct_t*) newpages;
+        fd_info->level_bitmap = tmplb;
+    }
 }
 
 ssize_t sys_write(int fd, const char* buf, size_t len)

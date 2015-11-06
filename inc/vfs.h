@@ -3,6 +3,8 @@
 #include "stddef.h"
 #include "stdint.h"
 
+#include "level_bitmap.h"
+
 typedef int32_t off_t;
 
 #define INNER_FD_COUNT 8

@@ -100,3 +100,12 @@ ssize_t level_bitmap_get_max(struct level_bitmap_t* map)
     rs += npos;
     return rs;
 }
+
+void level_bitmap_cpy(struct level_bitmap_t* dst, struct level_bitmap_t* src)
+{
+
+}
+
+void level_bitmap_batch_set(struct level_bitmap_t* map, size_t start, size_t end)
+{
+}
