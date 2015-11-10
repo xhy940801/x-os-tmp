@@ -6,6 +6,15 @@
 #include "sched.h"
 #include "errno.h"
 #include "mem.h"
+#include "panic.h"
+
+struct fd_append_info_t
+{
+    uint16_t fd_pagesize;
+    struct fd_struct_t* fd_append;
+    int fd_max;
+    struct level_bitmap_t level_bitmap;
+};
 
 static struct vfs_desc_t* vfs_desc_points[16];
 
@@ -30,6 +39,33 @@ static ssize_t _vfs_default_write (struct vfs_inode_desc_t* inode, const char* b
 static int _vfs_default_fsync (struct vfs_inode_desc_t* inode)
 {
     return 0;
+}
+
+static inline void fa_alloc_fd_info(struct fd_append_info_t* new_info, size_t pagesize)
+{
+    new_info->fd_pagesize = pagesize;
+    void* newpages = get_pages(pagesize, 1, MEM_FLAGS_P | MEM_FLAGS_K);
+    new_info->fd_max = ((4096 << (pagesize + 1)) - 20) * 31 / (31 * sizeof(struct fd_struct_t) + 4);
+    new_info->fd_append = (struct fd_struct_t*) newpages;
+    new_info->level_bitmap.bitmaps = (uint32_t*) (((char*) newpages) + new_info->fd_max * sizeof(struct fd_struct_t));
+    new_info->level_bitmap.max_level = 4;
+}
+
+static inline void fa_cpy_fd_info(struct fd_append_info_t* dst, struct fd_info_t* src)
+{
+    _memcpy(dst->fd_append, src->fd_append, sizeof(src->fd_append[0]) * src->fd_max);
+    level_bitmap_cpy(&(dst->level_bitmap), &(src->level_bitmap), src->fd_max + 1);
+    uint32_t maxtmp = dst->fd_max;
+    dst->level_bitmap.max_level = 0;
+    dst->level_bitmap.bitmaps += 4;
+    while(maxtmp >>= 5)
+        --dst->level_bitmap.bitmaps;
+    level_bitmap_batch_set(&(dst->level_bitmap), src->fd_max + 1, dst->fd_max + 1);
+}
+
+static inline void fa_free_fd_info(struct fd_info_t* fd_info)
+{
+    free_pages(fd_info->fd_append, fd_info->fd_pagesize);
 }
 
 void init_vfs_module()
@@ -129,32 +165,28 @@ void init_fd_info(struct fd_info_t* fd_info)
 
 void release_fd_info(struct fd_info_t* fd_info)
 {
-    free_pages(fd_info->fd_append, fd_info->fd_page_size);
+    free_pages(fd_info->fd_append, fd_info->fd_pagesize);
 }
 
-void fd_alloc(struct fd_info_t* fd_info)
+ssize_t fd_alloc(struct fd_info_t* fd_info)
 {
     ssize_t fd = level_bitmap_get_min(&(fd_info->level_bitmap));
     if(fd < 0)
     {
-        void* newpages = get_pages(fd_info->fd_page_size + 1, 1, MEM_FLAGS_P | MEM_FLAGS_K);
-        uint32_t pagesize = 4096 << (fd_info->fd_page_size + 1);
-        uint32_t fd_max = (pagesize - 20) * 31 / (31 * sizeof(struct fd_struct_t) + 4);
-        _memcpy(newpages, fd_info->fd_append, fd_info->fd_max * sizeof(struct fd_struct_t));
-        struct level_bitmap_t tmplb;
-        tmplb.bitmaps = (uint32_t*) (((char*) newpages) + fd_info->fd_max * sizeof(struct fd_struct_t));
-        tmplb.max_level = 4;
-        level_bitmap_cpy(&tmplb, &(fd_info->level_bitmap));
-        uint32_t maxtmp = fd_max;
-        tmplb.max_level = 0;
-        tmplb.bitmaps += 4;
-        while(maxtmp >>= 5)
-            --tmplb.bitmaps;
-        level_bitmap_batch_set(&tmplb, fd_info->fd_max, fd_max);
-        free_pages(fd_info->fd_append, fd_info->fd_page_size);
-        fd_info->fd_append = (struct fd_struct_t*) newpages;
-        fd_info->level_bitmap = tmplb;
+        struct fd_append_info_t fda_info;
+        fa_alloc_fd_info(&fda_info, fd_info->fd_pagesize + 1);
+        fa_cpy_fd_info(&fda_info, fd_info);
+        fa_free_fd_info(fd_info);
+        fd_info->fd_pagesize = fda_info.fd_pagesize;
+        fd_info->fd_append = fda_info.fd_append;
+        fd_info->fd_max = fda_info.fd_max;
+        fd_info->level_bitmap = fda_info.level_bitmap;
+        fd = level_bitmap_get_min(&(fd_info->level_bitmap));
     }
+    kassert(fd >= 0);
+    int rs = level_bitmap_bit_clear(&(fd_info->level_bitmap), (size_t) fd);
+    kassert(rs != 0);
+    return fd;
 }
 
 ssize_t sys_write(int fd, const char* buf, size_t len)

@@ -1,4 +1,5 @@
 #include "level_bitmap.h"
+#include "string.h"
 #include "asm.h"
 
 static const size_t level_jump_sizes[] = {
@@ -101,11 +102,28 @@ ssize_t level_bitmap_get_max(struct level_bitmap_t* map)
     return rs;
 }
 
-void level_bitmap_cpy(struct level_bitmap_t* dst, struct level_bitmap_t* src)
+void level_bitmap_cpy(struct level_bitmap_t* dst, struct level_bitmap_t* src, size_t count)
 {
-
+    size_t n = 0;
+    while(count)
+    {
+        count >>= 5;
+        n += count;
+    }
+    n += src->max_level + 1;
+    if(dst->max_level > src->max_level)
+    {
+        _memcpy(dst->bitmaps + dst->max_level - src->max_level, src->bitmaps, n * sizeof(uint32_t));
+        for(size_t i = 0; i < dst->max_level - src->max_level; ++i)
+            dst->bitmaps[i] = 1;
+    }
+    else
+        _memcpy(dst->bitmaps, src->bitmaps + src->max_level - dst->max_level, (n - (src->max_level - dst->max_level)) * sizeof(uint32_t));
 }
 
+//TODO
 void level_bitmap_batch_set(struct level_bitmap_t* map, size_t start, size_t end)
 {
+    for(size_t i = start; i < end; ++i)
+        level_bitmap_bit_set(map, i);
 }

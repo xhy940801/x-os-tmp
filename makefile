@@ -40,7 +40,25 @@ clean:
 	$(RM) bin/*.sb
 	$(RM) bin/*.cb
 	$(RM) dep/*
-	dd if=/dev/zero of=bin/c.img bs=512 count=2880 conv=notrunc
+	dd if=/dev/zero of=bin/c.img bs=512 count=20480 conv=notrunc
 
 run:bin/c.img
 	bochs -q -f .bochsrc
+
+test-%-run:
+	cd test/$(patsubst test-%-run,%,$@) && $(MAKE) run
+
+test-%-gdbrun:
+	cd test/$(patsubst test-%-gdbrun,%,$@) && $(MAKE) gdbrun
+
+test-%-clean:
+	cd test/$(patsubst test-%-clean,%,$@) && $(MAKE) clean
+
+test-%:
+	cd test/$(patsubst test-%,%,$@) && $(MAKE)
+
+testrun:$(patsubst test/%,test-%-run,$(wildcard test/*))
+
+testclean:$(patsubst test/%,test-%-clean,$(wildcard test/*))
+
+test:$(patsubst test/%,test-%,$(wildcard test/*))

@@ -1,5 +1,7 @@
 #pragma once
 
+#ifndef TESTMODEL
+
 typedef unsigned int        size_t  ;
 typedef int                 ssize_t ;
 
@@ -11,3 +13,12 @@ typedef int                 ssize_t ;
 
 #undef parentof
 #define parentof(source, type, member) ((type*) (((char*) source) - offsetof(type, member)))
+
+#else
+
+#include <stddef.h>
+#include <sys/types.h>
+#undef parentof
+#define parentof(source, type, member) ((type*) (((char*) source) - offsetof(type, member)))
+
+#endif

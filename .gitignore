@@ -1,6 +1,9 @@
 bin/*
 obj/*
 dep/*
+test/*/bin/*
+test/*/obj/*
+test/*/dep/*
 bochsout.txt
 os.symbols
 os.symbols.origin

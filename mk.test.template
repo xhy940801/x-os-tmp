@@ -1,0 +1,51 @@
+
+SRCDIR=src
+INCDIR=inc
+OBJDIR=obj
+BINDIR=bin
+DEPDIR=dep
+LIBDIR=lib
+
+POSTFIX=c
+OUTFILENAME=outfile.out
+
+SOURCES=$(notdir $(wildcard $(SRCDIR)/*.$(POSTFIX)))
+OBJS=$(patsubst %.$(POSTFIX),$(OBJDIR)/%.o,$(SOURCES))
+ROBJS=$(patsubst %.$(POSTFIX),$(OBJDIR)/%.ro,$(EXPORTFILES))
+CFLAGS=-Wall -O0 -g -std=c99 -iquote../../inc -I$(INCDIR) -DTESTMODEL
+
+release:$(BINDIR)/$(OUTFILENAME)
+
+$(BINDIR)/$(OUTFILENAME):$(OBJS) $(ROBJS)
+	$(CC) $(CFLAGS) -o $(BINDIR)/$(OUTFILENAME) $^
+$(OBJDIR)/%.o:$(SRCDIR)/%.$(POSTFIX)
+	$(CC) -c $(CFLAGS) $< -o $@
+$(DEPDIR)/%.d:$(SRCDIR)/%.$(POSTFIX)
+	$(RM) $@;
+	$(CC) -MM $(CFLAGS) $< | sed 's/\($(patsubst %.$(POSTFIX),%,$(notdir $<))\)\.o *: */$(OBJDIR)\/\1.o $(DEPDIR)\/\1.d:/' > $@
+
+$(OBJDIR)/%.ro:../../src/%.$(POSTFIX)
+	$(CC) -c $(CFLAGS) $< -o $@
+$(DEPDIR)/%.rd:../../src/%.$(POSTFIX)
+	$(RM) $@;
+	$(CC) -MM $(CFLAGS) $< | sed 's/\($(patsubst %.$(POSTFIX),%,$(notdir $<))\)\.o *: */$(OBJDIR)\/\1.ro $(DEPDIR)\/\1.rd:/' > $@
+
+ifneq ($(MAKECMDGOALS),clean)
+sinclude $(patsubst $(OBJDIR)/%.o,$(DEPDIR)/%.d,$(OBJS))
+sinclude $(patsubst $(OBJDIR)/%.ro,$(DEPDIR)/%.rd,$(ROBJS))
+endif
+
+.PHONY: run gdbrun clean
+
+run:$(BINDIR)/$(OUTFILENAME)
+	@$(BINDIR)/$(OUTFILENAME)
+
+gdbrun:$(BINDIR)/$(OUTFILENAME)
+	@gdb $(BINDIR)/$(OUTFILENAME)$(TESTPOSTFIX)
+
+clean:
+	@$(RM) $(OBJDIR)/*.o
+	@$(RM) $(OBJDIR)/*.ro
+	@$(RM) $(DEPDIR)/*.d
+	@$(RM) $(DEPDIR)/*.rd
+	@$(RM) $(BINDIR)/$(OUTFILENAME)
