@@ -58,6 +58,8 @@ struct process_info_t
     struct process_info_t* brother;
     int last_errno;
     int sub_errno;
+    uint32_t owner_id;
+    uint32_t group_id;
     uint32_t sign;
     //for-wait
     struct sleep_desc_t sleep_info;
@@ -65,11 +67,7 @@ struct process_info_t
     //sched
     uint16_t rest_time;
     //fd-info
-    uint16_t fd_page_size;
-    struct fd_struct_t fds[16];
-    struct fd_struct_t* fd_append;
-    int fd_max;
-    int fd_free_num;
+    struct fd_info_t fd_info;
     //cpu state
     void* catalog_table_v;
     struct cpu_stat_t cpu_state;

@@ -193,7 +193,14 @@ void init_tty0_module()
     vfs_register(&tty0_vfs, VFS_MDRIVER_TTY0);
 }
 
-struct vfs_inode_desc_t* get_tty0_inode()
+int open_tty0(uint32_t auth, struct fd_struct_t* fd_struct)
 {
-    return &(tty0_inode.inode_base);
+    if(auth == VFS_FDAUTH_WRITE || auth == 0)
+    {
+        fd_struct->auth = auth;
+        fd_struct->inode = &(tty0_inode.inode_base);
+        ++tty0_inode.inode_base.open_count;
+        return 0;
+    }
+    return -1;
 }

@@ -3,7 +3,18 @@
 #include "stddef.h"
 #include "stdint.h"
 
+#include "level_bitmap.h"
+
 typedef int32_t off_t;
+
+#define INNER_FD_COUNT 8
+
+enum
+{
+    VFS_FDAUTH_EXEC     = 0x01,
+    VFS_FDAUTH_WRITE    = 0x02,
+    VFS_FDAUTH_READ     = 0x04
+};
 
 enum
 {
@@ -34,11 +45,8 @@ struct vfs_inode_desc_t;
 
 struct fd_struct_t
 {
-    union
-    {
-        struct vfs_inode_desc_t* inode;
-        int next_free_fd;
-    };
+    struct vfs_inode_desc_t* inode;
+    uint32_t auth;
 };
 
 struct vfs_inode_desc_t
@@ -65,6 +73,17 @@ struct vfs_desc_t
     int (*fsync) (struct vfs_inode_desc_t* inode);
 };
 
+struct fd_info_t
+{
+    uint16_t fd_pagesize;
+    struct fd_struct_t fds[INNER_FD_COUNT];
+    struct fd_struct_t* fd_append;
+    int fd_size;
+    int fd_capacity;
+    uint32_t innerbitmaps;
+    struct level_bitmap_t level_bitmap;
+};
+
 void init_vfs_module();
 int vfs_register(struct vfs_desc_t* vfs, size_t num);
 
@@ -73,4 +92,9 @@ ssize_t vfs_read (struct vfs_inode_desc_t* inode, char* buf, size_t len);
 ssize_t vfs_write (struct vfs_inode_desc_t* inode, const char* buf, size_t len);
 int vfs_fsync (struct vfs_inode_desc_t* inode);
 
+void init_fd_info(struct fd_info_t* fd_info);
+void release_fd_info(struct fd_info_t* fd_info);
+
 ssize_t sys_write(int fd, const char* buf, size_t len);
+ssize_t sys_read(int fd, char* buf, size_t len);
+int sys_fsync(int fd);
