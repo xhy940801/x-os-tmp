@@ -64,8 +64,7 @@ void turn_to_process1()
     open_tty0(VFS_FDAUTH_WRITE, &(process1info.fd_info.fds[1]));
     open_tty0(VFS_FDAUTH_WRITE, &(process1info.fd_info.fds[2]));
 
-    process1info.fd_info.fd_max = 8;
-    pcinfo_rb_tree_init(&pc_rb_tree_head, &(process1info.rb_node));
+    rb_tree_init(&pc_rb_tree_head, &(process1info.rb_node));
 
     mktssdesc(3, &cpu0tss);
     _ltr(3 * 8);

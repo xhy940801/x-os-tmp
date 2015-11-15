@@ -78,7 +78,8 @@ struct fd_info_t
     uint16_t fd_pagesize;
     struct fd_struct_t fds[INNER_FD_COUNT];
     struct fd_struct_t* fd_append;
-    int fd_max;
+    int fd_size;
+    int fd_capacity;
     uint32_t innerbitmaps;
     struct level_bitmap_t level_bitmap;
 };

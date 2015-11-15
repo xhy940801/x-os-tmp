@@ -12,7 +12,7 @@ struct fd_append_info_t
 {
     uint16_t fd_pagesize;
     struct fd_struct_t* fd_append;
-    int fd_max;
+    int fd_capacity;
     struct level_bitmap_t level_bitmap;
 };
 
@@ -45,22 +45,21 @@ static inline void fa_alloc_fd_info(struct fd_append_info_t* new_info, size_t pa
 {
     new_info->fd_pagesize = pagesize;
     void* newpages = get_pages(pagesize, 1, MEM_FLAGS_P | MEM_FLAGS_K);
-    new_info->fd_max = ((4096 << (pagesize + 1)) - 20) * 31 / (31 * sizeof(struct fd_struct_t) + 4);
+    new_info->fd_capacity = ((4096 << (pagesize + 1)) - 20) * 31 / (31 * sizeof(struct fd_struct_t) + 4);
     new_info->fd_append = (struct fd_struct_t*) newpages;
-    new_info->level_bitmap.bitmaps = (uint32_t*) (((char*) newpages) + new_info->fd_max * sizeof(struct fd_struct_t));
+    new_info->level_bitmap.bitmaps = (uint32_t*) (((char*) newpages) + new_info->fd_capacity * sizeof(struct fd_struct_t));
     new_info->level_bitmap.max_level = 4;
 }
 
 static inline void fa_cpy_fd_info(struct fd_append_info_t* dst, struct fd_info_t* src)
 {
-    _memcpy(dst->fd_append, src->fd_append, sizeof(src->fd_append[0]) * src->fd_max);
-    level_bitmap_cpy(&(dst->level_bitmap), &(src->level_bitmap), src->fd_max + 1);
-    uint32_t maxtmp = dst->fd_max;
+    _memcpy(dst->fd_append, src->fd_append, sizeof(src->fd_append[0]) * src->fd_capacity);
+    level_bitmap_cpy(&(dst->level_bitmap), &(src->level_bitmap), src->fd_capacity + 1);
+    uint32_t maxtmp = dst->fd_capacity;
     dst->level_bitmap.max_level = 0;
     dst->level_bitmap.bitmaps += 4;
     while(maxtmp >>= 5)
         --dst->level_bitmap.bitmaps;
-    level_bitmap_batch_set(&(dst->level_bitmap), src->fd_max + 1, dst->fd_max + 1);
 }
 
 static inline void fa_free_fd_info(struct fd_info_t* fd_info)
@@ -158,7 +157,8 @@ ssize_t vfs_fsync(struct vfs_inode_desc_t* inode)
 void init_fd_info(struct fd_info_t* fd_info)
 {
     _memset(fd_info, 0, sizeof(struct fd_info_t));
-    fd_info->fd_max = INNER_FD_COUNT - 1;
+    fd_info->fd_size = 0;
+    fd_info->fd_capacity = INNER_FD_COUNT - 1;
     fd_info->innerbitmaps = (1 << INNER_FD_COUNT) - 1;
     fd_info->level_bitmap.bitmaps = &(fd_info->innerbitmaps);
 }
@@ -173,25 +173,28 @@ ssize_t fd_alloc(struct fd_info_t* fd_info)
     ssize_t fd = level_bitmap_get_min(&(fd_info->level_bitmap));
     if(fd < 0)
     {
-        struct fd_append_info_t fda_info;
-        fa_alloc_fd_info(&fda_info, fd_info->fd_pagesize + 1);
-        fa_cpy_fd_info(&fda_info, fd_info);
-        fa_free_fd_info(fd_info);
-        fd_info->fd_pagesize = fda_info.fd_pagesize;
-        fd_info->fd_append = fda_info.fd_append;
-        fd_info->fd_max = fda_info.fd_max;
-        fd_info->level_bitmap = fda_info.level_bitmap;
-        fd = level_bitmap_get_min(&(fd_info->level_bitmap));
+        if(fd_info->fd_size >= fd_info->fd_capacity)
+        {
+            struct fd_append_info_t fda_info;
+            fa_alloc_fd_info(&fda_info, fd_info->fd_pagesize + 1);
+            fa_cpy_fd_info(&fda_info, fd_info);
+            fa_free_fd_info(fd_info);
+            fd_info->fd_pagesize = fda_info.fd_pagesize;
+            fd_info->fd_append = fda_info.fd_append;
+            fd_info->fd_capacity = fda_info.fd_capacity;
+            fd_info->level_bitmap = fda_info.level_bitmap;
+        }
+        fd = fd_info->fd_size;
+        ++fd_info->fd_size;
     }
     kassert(fd >= 0);
-    int rs = level_bitmap_bit_clear(&(fd_info->level_bitmap), (size_t) fd);
-    kassert(rs != 0);
+    level_bitmap_bit_clear(&(fd_info->level_bitmap), (size_t) fd);
     return fd;
 }
 
 ssize_t sys_write(int fd, const char* buf, size_t len)
 {
-    if(fd < 0 || fd > cur_process->fd_info.fd_max)
+    if(fd < 0 || fd >= cur_process->fd_info.fd_size)
     {
         cur_process->last_errno = EPERM;
         return -1;
@@ -209,7 +212,7 @@ ssize_t sys_write(int fd, const char* buf, size_t len)
 
 ssize_t sys_read(int fd, char* buf, size_t len)
 {
-    if(fd < 0 || fd > cur_process->fd_info.fd_max)
+    if(fd < 0 || fd >= cur_process->fd_info.fd_size)
     {
         cur_process->last_errno = EPERM;
         return -1;
@@ -227,7 +230,7 @@ ssize_t sys_read(int fd, char* buf, size_t len)
 
 int sys_fsync(int fd)
 {
-    if(fd < 0 || fd > cur_process->fd_info.fd_max)
+    if(fd < 0 || fd >= cur_process->fd_info.fd_size)
     {
         cur_process->last_errno = EPERM;
         return -1;
