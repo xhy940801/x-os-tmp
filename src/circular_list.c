@@ -20,3 +20,11 @@ void circular_list_remove(struct list_node_t* node)
     node->next->pre = node->pre;
     node->pre->next = node->next;
 }
+
+int circular_list_is_inlist(struct list_node_t* head, struct list_node_t* node)
+{
+    for(struct list_node_t* p = head->next; p != head; p = p->next)
+        if(p == node)
+            return 0;
+    return -1;
+}
