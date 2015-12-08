@@ -6,6 +6,7 @@
 #include "pcinfo_rb_tree.h"
 #include "panic.h"
 #include "tty0.h"
+#include "vfs.h"
 
 #define LEVEL_SIZE 16
 
@@ -61,8 +62,10 @@ void turn_to_process1()
     process1info.cpu_state.catalog_table_p = 0x00200000;
     process1info.catalog_table_v = (void*) 0xc0000000;
     
-    open_tty0(VFS_FDAUTH_WRITE, &(process1info.fd_info.fds[1]));
-    open_tty0(VFS_FDAUTH_WRITE, &(process1info.fd_info.fds[2]));
+    init_fd_info(&process1info.fd_info);
+    vfs_bind_fd(1, VFS_FDAUTH_WRITE, get_tty0_inode(), &process1info.fd_info);
+    vfs_bind_fd(2, VFS_FDAUTH_WRITE, get_tty0_inode(), &process1info.fd_info);
+    process1info.fd_info.fd_size = 3;
 
     rb_tree_init(&pc_rb_tree_head, &(process1info.rb_node));
 

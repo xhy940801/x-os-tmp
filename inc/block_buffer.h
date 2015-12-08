@@ -13,12 +13,12 @@
 
 enum BLKBUFFER_FLAGS
 {
-    BLKBUFFER_FLAG_INQUEUE  = 1
+    BLKBUFFER_FLAG_INQUEUE  = 1,
     BLKBUFFER_FLAG_UNSYNC   = 2,
     BLKBUFFER_FLAG_DIRTY    = 4,
     BLKBUFFER_FLAG_LOCK     = 16,
     BLKBUFFER_FLAG_SYNCING  = 32,
-    BLKBUFFER_FLAG_FLUSHING = 64,
+    BLKBUFFER_FLAG_FLUSHING = 64
 };
 
 struct block_buffer_desc_t
@@ -52,4 +52,5 @@ struct block_buffer_manager_info_t
 };
 
 void block_buffer_module_init();
-struct block_buffer_desc_t* get_block_buffer(uint16_t main_driver, uint16_t sub_driver, size_t block_no);
+struct block_buffer_desc_t* get_block_buffer(uint16_t main_driver, uint16_t sub_driver, size_t block_no, int timeout);
+void release_block_buffer(struct block_buffer_desc_t* blk);

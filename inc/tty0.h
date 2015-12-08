@@ -19,4 +19,4 @@ struct tty0_vfs_inode_desc_t
 };
 
 void init_tty0_module();
-int open_tty0(uint32_t auth, struct fd_struct_t* fd_struct);
+struct vfs_inode_desc_t* get_tty0_inode();

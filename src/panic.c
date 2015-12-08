@@ -1,10 +1,12 @@
 #include "panic.h"
 
 #include "printk.h"
+#include "sched.h"
 
 void panic(const char* str)
 {
     printk("\x1b\x0c%s", str);
+    _print_to_eax(cur_process->last_errno);
     while(1);
 }
 

@@ -94,6 +94,8 @@ int vfs_fsync (struct vfs_inode_desc_t* inode);
 void init_fd_info(struct fd_info_t* fd_info);
 void release_fd_info(struct fd_info_t* fd_info);
 
+void vfs_bind_fd(int fd, uint32_t auth, struct vfs_inode_desc_t* inode, struct fd_info_t* fd_info);
+
 ssize_t sys_write(int fd, const char* buf, size_t len);
 ssize_t sys_read(int fd, char* buf, size_t len);
 int sys_fsync(int fd);

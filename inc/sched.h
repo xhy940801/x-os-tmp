@@ -43,6 +43,16 @@ struct cpu_stat_t
     char fpu_state[108];
 };
 
+struct waitlist_node_desc_t
+{
+    struct list_node_t node;
+    union
+    {
+        int waiting;
+        size_t demand;
+    };
+};
+
 struct process_info_t
 {
     //rb-tree
@@ -63,7 +73,7 @@ struct process_info_t
     uint32_t sign;
     //for-wait
     struct sleep_desc_t sleep_info;
-    struct ksemaphore_node_t semaphore_node;
+    struct waitlist_node_desc_t waitlist_node;
     //sched
     uint16_t rest_time;
     //fd-info
