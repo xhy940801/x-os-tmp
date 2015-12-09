@@ -76,11 +76,18 @@ struct process_info_t
     struct waitlist_node_desc_t waitlist_node;
     //sched
     uint16_t rest_time;
+    uint16_t _padding;
     //fd-info
     struct fd_info_t fd_info;
     //cpu state
-    void* catalog_table_v;
+    uint32_t* catalog_table_v;
     struct cpu_stat_t cpu_state;
+};
+
+union process_sys_page_t
+{
+    char stack[8192];
+    struct process_info_t process_info;
 };
 
 struct sched_level_desc_t
@@ -102,6 +109,8 @@ void schedule();
 
 void in_sched_queue(struct process_info_t* proc);
 void out_sched_queue(struct process_info_t* proc);
+
+void iret_to_user_level(void* target);
 
 extern struct gdt_descriptor_t _gdt[];
 extern struct process_info_t* cur_process;

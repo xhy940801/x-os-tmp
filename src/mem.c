@@ -10,6 +10,10 @@
 #include "asm.h"
 #include "sched.h"
 #include "buddy.h"
+#include "exec.h"
+#include "interrupt.h"
+
+void on_lack_of_page();
 
 extern char _end[];
 static struct mem_desc_t* mem_descs = NULL;
@@ -247,7 +251,50 @@ void free_pages(void* p, size_t n)
     flush_page_table();
 }
 
+void* get_one_page(uint16_t share, uint16_t flags, uint32_t* physical_addr)
+{
+    void* p = get_address_area(0);
+    uint32_t cp = (uint32_t) p;
+    struct mem_desc_t* desc = getonefreepage(share, flags);
+    *physical_addr = (desc - mem_descs) * 4096;
+    mapping_page(cp, *physical_addr, 7);
+    _memset(p, 0, 4096);
+    return p;
+}
+
 void flush_page_table()
 {
     _lcr3(cur_process->cpu_state.catalog_table_p);
+}
+
+void init_paging_module()
+{
+    for(size_t i = 0; i < 768; ++i)
+        cur_process->catalog_table_v[i] = 0x06;
+    setup_trap_desc(14, on_lack_of_page, 0);
+}
+
+void process_lack_page(unsigned e_code)
+{
+    //printk("e_code [%d]\n", e_code);
+    uint32_t cr2 = _gcr2();
+    printk("cr2 [%u]\n", cr2);
+    kassert(cr2 < KMEM_START);
+    uint32_t* page_table;
+    printk("catalog [%u]\n", cur_process->catalog_table_v);
+    if((cur_process->catalog_table_v[cr2 >> 22] & 0x01) == 0)
+    {
+        kassert((cur_process->catalog_table_v[cr2 >> 22] & 0x67) == 0x06);
+        uint32_t physical_addr;
+        page_table = (uint32_t*) get_one_page(1, MEM_FLAGS_P, &physical_addr);
+        _memset(page_table, 0x06, 4096);
+        cur_process->catalog_table_v[cr2 >> 22] = physical_addr | 0x07;
+    }
+    else
+        page_table = (uint32_t*) (cur_process->catalog_table_v[cr2 >> 22] & 0xfffff000);
+    struct mem_desc_t* desc = getonefreepage(1, MEM_FLAGS_P);
+    uint32_t physical_addr = (desc - mem_descs) * 4096;
+    page_table[(cr2 >> 12) & 0x3ff] = physical_addr | 0x07;
+    int ret = load_program((void*) (cr2 & 0xfffff000), cur_process);
+    kassert(ret == 0);
 }

@@ -36,3 +36,5 @@ void* get_pages(size_t n, uint16_t share, uint16_t flags);
 void free_pages(void* p, size_t n);
 
 void flush_page_table();
+
+void init_paging_module();

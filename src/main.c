@@ -48,12 +48,19 @@ void test_slab()
     printk("%s: free memsize: %u B = %u MB\n", __func__, free_memsize, free_memsize / (1024 * 1024));
 }
 
+void user_do()
+{
+    while(1);
+}
+
 int main1()
 {
     init_sysparams();
     init_vfs_module();
     init_tty0_module();
     turn_to_process1();
+    init_paging_module();
+
     printk("\f");
     uint32_t memsize = get_sysparams()->memsize;
     printk("memsize: %u B = %u MB\n", memsize, memsize / (1024 * 1024));
@@ -65,6 +72,7 @@ int main1()
     //test_pages();
     //test_slab();
     //printk("free memsize: %u B = %u MB\n", free_memsize, free_memsize / (1024 * 1024));
+    iret_to_user_level(user_do);
     panic("could not run here!");
     return 0;
 }

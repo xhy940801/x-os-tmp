@@ -12,3 +12,4 @@
 #define _lcr3(pos) __asm__("mov %%cr3, %%eax"::"a"(pos))
 #define _bsf(src) ({int _v; __asm__("bsf %1, %0":"=r"(_v):"r"(src)); _v;})
 #define _bsr(src) ({int _v; __asm__("bsr %1, %0":"=r"(_v):"r"(src)); _v;})
+#define _gcr2() ({int _v; __asm__("mov %%cr2, %0":"=g"(_v)); _v;})

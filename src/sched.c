@@ -10,10 +10,10 @@
 
 #define LEVEL_SIZE 16
 
-char system_stack[4096];
+union process_sys_page_t process1page;
 
 struct tss_struct_t cpu0tss;
-struct process_info_t process1info;
+
 struct process_info_t* cur_process;
 struct rb_tree_head_t pc_rb_tree_head;
 
@@ -47,31 +47,32 @@ void mktssdesc(unsigned int id, struct tss_struct_t* tss)
 void turn_to_process1()
 {
     _memset(&cpu0tss, 0, sizeof(cpu0tss));
-    _memset(&process1info, 0, sizeof(process1info));
+    _memset(&process1page.process_info, 0, sizeof(process1page.process_info));
     cpu0tss.ss0 = 0x10;
 
-    process1info.nice = 0;
-    process1info.original_nice = 3;
-    process1info.state = PROCESS_WAITING;
-    process1info.pid = 1;
-    process1info.parent = NULL;
-    process1info.brother = NULL;
-    process1info.owner_id = 0;
-    process1info.group_id = 0;
-    process1info.cpu_state.esp = (uint32_t) (system_stack + 4096);
-    process1info.cpu_state.catalog_table_p = 0x00200000;
-    process1info.catalog_table_v = (void*) 0xc0000000;
+    process1page.process_info.nice = 0;
+    process1page.process_info.original_nice = 3;
+    process1page.process_info.state = PROCESS_WAITING;
+    process1page.process_info.pid = 1;
+    process1page.process_info.parent = NULL;
+    process1page.process_info.brother = NULL;
+    process1page.process_info.owner_id = 0;
+    process1page.process_info.group_id = 0;
+    process1page.process_info.cpu_state.esp = (uint32_t) (process1page.stack + 8192);
+    process1page.process_info.cpu_state.catalog_table_p = 0x00200000;
+    process1page.process_info.catalog_table_v = (uint32_t*) 0xc0100000;
     
-    init_fd_info(&process1info.fd_info);
-    vfs_bind_fd(1, VFS_FDAUTH_WRITE, get_tty0_inode(), &process1info.fd_info);
-    vfs_bind_fd(2, VFS_FDAUTH_WRITE, get_tty0_inode(), &process1info.fd_info);
-    process1info.fd_info.fd_size = 3;
+    init_fd_info(&process1page.process_info.fd_info);
+    vfs_bind_fd(1, VFS_FDAUTH_WRITE, get_tty0_inode(), &process1page.process_info.fd_info);
+    vfs_bind_fd(2, VFS_FDAUTH_WRITE, get_tty0_inode(), &process1page.process_info.fd_info);
+    process1page.process_info.fd_info.fd_size = 3;
 
-    rb_tree_init(&pc_rb_tree_head, &(process1info.rb_node));
+    rb_tree_init(&pc_rb_tree_head, &(process1page.process_info.rb_node));
 
     mktssdesc(3, &cpu0tss);
     _ltr(3 * 8);
-    cur_process = &process1info;
+    cur_process = &process1page.process_info;
+    process1page.process_info.catalog_table_v = (uint32_t*) 0xc0100000;
 }
 
 void schedule_module_init()
@@ -121,7 +122,7 @@ void schedule()
         expire_count = t_count;
     }
     
-    struct process_info_t* new_process = &process1info;
+    struct process_info_t* new_process = &process1page.process_info;
     for(size_t i = LEVEL_SIZE - 1; i < LEVEL_SIZE; --i)
     {
         if(active_levels[i].count == 0)

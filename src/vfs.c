@@ -50,7 +50,6 @@ static inline void fa_alloc_fd_info(struct fd_append_info_t* new_info, size_t pa
 {
     new_info->fd_pagesize = pagesize;
     void* newpages = get_pages(pagesize, 1, MEM_FLAGS_P | MEM_FLAGS_K);
-    _memset(newpages, 0, 4096 * (1 << pagesize));
     new_info->fd_capacity = _vfs_estimate_capacity(pagesize);
     new_info->fd_append = (struct fd_struct_t*) newpages;
     new_info->level_bitmap.bitmaps = (uint32_t*) (((char*) newpages) + new_info->fd_capacity * sizeof(struct fd_struct_t));
@@ -163,7 +162,7 @@ ssize_t vfs_fsync(struct vfs_inode_desc_t* inode)
 
 void init_fd_info(struct fd_info_t* fd_info)
 {
-    _memset(fd_info, 0, sizeof(struct fd_info_t));
+    _memset(fd_info, 0, sizeof(*fd_info) - 4);
     fd_info->fd_size = 0;
     fd_info->fd_capacity = INNER_FD_COUNT;
     fd_info->innerbitmaps = (1 << INNER_FD_COUNT) - 1;
