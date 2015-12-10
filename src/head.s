@@ -168,8 +168,8 @@ _gdt:
     dq 0x00cf9a000000ffff
     dq 0x00cf92000000ffff
     dq 0x0000000000000000
-    dq 0x00cb9a000000ffff
-    dq 0x00cb92000000ffff
+    dq 0x00cbfa000000ffff
+    dq 0x00cbf2000000ffff
     times 250 dq 0
 _bios_sys_params:
     dq 0

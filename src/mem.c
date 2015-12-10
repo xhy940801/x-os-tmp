@@ -298,11 +298,17 @@ void process_cow(unsigned e_code)
             for(size_t i = 0; i < 1024; ++i)
             {
                 page_table[i] = old_page_table[i] & ~((uint32_t) 0x02);
-                struct mem_desc_t* tdesc = mem_descs + (page_table[i] >> 12);
-                ++tdesc->share;
-                tdesc->flags |= MEM_FLAGS_S;
+                if(old_page_table[i] & 0x01)
+                {
+                    struct mem_desc_t* tdesc = mem_descs + (page_table[i] >> 12);
+                    printk("cao i [%u] offset [%u]\n", i, page_table[i]);
+                    ++tdesc->share;
+                    tdesc->flags |= MEM_FLAGS_S;
+                }
             }
+            printk("cow3! cr2 [%u]\n", cr2);
             cur_process->catalog_table_v[cr2 >> 22] = physical_addr | 0x07;
+            printk("cow4! cr2 [%u]\n", cr2);
         }
         else
         {
@@ -377,6 +383,7 @@ void process_lack_page(unsigned e_code)
 int mem_fork(struct process_info_t* dst, struct process_info_t* src)
 {
     dst->catalog_table_v = get_one_page(1, MEM_FLAGS_P | MEM_FLAGS_K | MEM_FLAGS_T, &dst->cpu_state.catalog_table_p);
+    printk("catlog-at [%u]\n\n", dst->cpu_state.catalog_table_p);
     _memcpy(dst->catalog_table_v + 768, src->catalog_table_v + 768, 256 * sizeof(uint32_t));
     for(size_t i = 0; i < 768; ++i)
     {

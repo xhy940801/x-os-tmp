@@ -94,7 +94,6 @@ union process_sys_page_t
 struct sched_level_desc_t
 {
     struct list_node_t head;
-    size_t count;
 };
 
 enum
@@ -107,7 +106,7 @@ enum
 
 void turn_to_process1();
 
-void schedule_module_init();
+void init_schedule_module();
 void schedule();
 
 void in_sched_queue(struct process_info_t* proc);
@@ -116,6 +115,7 @@ void out_sched_queue(struct process_info_t* proc);
 void iret_to_user_level(void* target);
 
 int sys_fork();
+void sys_yield();
 
 extern struct gdt_descriptor_t _gdt[];
 extern struct process_info_t* cur_process;

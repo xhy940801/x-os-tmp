@@ -13,14 +13,15 @@ struct syscall_desc_t
     int (*callback)(int arg0, int arg1, int arg2);
 };
 
-struct syscall_desc_t syscalls[16];
+struct syscall_desc_t syscalls[SYSCALL_SIZE];
 
 void init_syscall_module()
 {
     setup_intr_desc(0x80, sys_call, 3);
-    _memset(syscalls, 0, sizeof(syscalls));
-    int ret = syscall_register(1, sys_fork);
-    kassert(ret == 0);
+    for(size_t i = 0; i < SYSCALL_SIZE; ++i)
+        syscalls[i].callback = NULL;
+    syscall_register(1, sys_fork);
+    syscall_register(2, sys_yield);
 }
 
 int sys_call_fail(int n)

@@ -8,6 +8,7 @@
 #include "tty0.h"
 #include "vfs.h"
 #include "mem.h"
+#include "printk.h"
 
 #define LEVEL_SIZE 16
 
@@ -52,10 +53,11 @@ void turn_to_process1()
     _memset(&cpu0tss, 0, sizeof(cpu0tss));
     _memset(&process1page.process_info, 0, sizeof(process1page.process_info));
     cpu0tss.ss0 = 0x10;
+    cpu0tss.esp0 = ((uint32_t) process1page.stack) + 8192;
 
     process1page.process_info.nice = 0;
     process1page.process_info.original_nice = 3;
-    process1page.process_info.state = PROCESS_WAITING;
+    process1page.process_info.state = PROCESS_RUNNING;
     process1page.process_info.pid = 1;
     process1page.process_info.parent = NULL;
     process1page.process_info.brother = NULL;
@@ -64,6 +66,7 @@ void turn_to_process1()
     process1page.process_info.cpu_state.esp = (uint32_t) (process1page.stack + 8192);
     process1page.process_info.cpu_state.catalog_table_p = 0x00200000;
     process1page.process_info.catalog_table_v = (uint32_t*) 0xc0100000;
+    process1page.process_info.rest_time = 5;
     
     init_fd_info(&process1page.process_info.fd_info);
     vfs_bind_fd(1, VFS_FDAUTH_WRITE, get_tty0_inode(), &process1page.process_info.fd_info);
@@ -78,21 +81,20 @@ void turn_to_process1()
     process1page.process_info.catalog_table_v = (uint32_t*) 0xc0100000;
 }
 
-void schedule_module_init()
+void init_schedule_module()
 {
     for(size_t i = 0; i < LEVEL_SIZE; ++i)
     {
         circular_list_init(&(sched_levels1[i].head));
-        sched_levels1[i].count = 0;
 
         circular_list_init(&(sched_levels2[i].head));
-        sched_levels2[i].count = 0;
     }
     active_levels = sched_levels1;
     expire_levels = sched_levels2;
 
     active_count = 0;
     expire_count = 0;
+    in_sched_queue(cur_process);
 }
 
 void schedule()
@@ -106,16 +108,16 @@ void schedule()
         if(cur_process->rest_time == 0)
         {
             cur_process->rest_time = flush_rest_time(cur_process);
-            circular_list_insert(&(expire_levels[cur_process->nice].head), &(cur_process->sched_node));
+            circular_list_insert(expire_levels[cur_process->nice].head.pre, &(cur_process->sched_node));
             --active_count;
             ++expire_count;
         }
         else
             circular_list_insert(active_levels[cur_process->nice].head.pre, &(cur_process->sched_node));
     }
-
     if(active_count == 0)
     {
+        //printk("change\n");
         struct sched_level_desc_t* t_levels = active_levels;
         active_levels = expire_levels;
         expire_levels = t_levels;
@@ -128,32 +130,43 @@ void schedule()
     struct process_info_t* new_process = &process1page.process_info;
     for(size_t i = LEVEL_SIZE - 1; i < LEVEL_SIZE; --i)
     {
-        if(active_levels[i].count == 0)
+        if(circular_list_is_empty(&active_levels[i].head))
             continue;
-        kassert(active_levels[i].head.next != &(active_levels[i].head));
         new_process = parentof(active_levels[i].head.next, struct process_info_t, sched_node);
     }
 
+    //printk("from pid [%d] to pid [%d]\n", cur_process->pid, new_process->pid);
     if(new_process == cur_process)
         return;
 
     struct process_info_t* old_process = cur_process;
     cur_process = new_process;
-    scheduleto(&(new_process->cpu_state), &(old_process->cpu_state));//这后面加任何东西都可能出错
+    union process_sys_page_t* new_process_page = parentof(new_process, union process_sys_page_t, process_info);
+    cpu0tss.esp0 = (uint32_t) (new_process_page->stack + 8192);
+    scheduleto(
+        &(new_process->cpu_state),
+        &(old_process->cpu_state)
+    );//这后面加任何东西都可能出错
 }
 
 void in_sched_queue(struct process_info_t* proc)
 {
-     struct sched_level_desc_t* t_levels;
-     if(proc->rest_time > 0)
-         t_levels = active_levels;
-     else
-     {
-         t_levels = expire_levels;
-         proc->rest_time = flush_rest_time(proc);
-     }
-     proc->state = PROCESS_RUNNING;
-     circular_list_insert(t_levels[proc->nice].head.pre, &(proc->sched_node));
+    kassert(active_levels != NULL);
+    kassert(expire_levels != NULL);
+    struct sched_level_desc_t* t_levels;
+    if(proc->rest_time > 0)
+    {
+        t_levels = active_levels;
+        ++active_count;
+    }
+    else
+    {
+        t_levels = expire_levels;
+        proc->rest_time = flush_rest_time(proc);
+        ++expire_count;
+    }
+    proc->state = PROCESS_RUNNING;
+    circular_list_insert(t_levels[proc->nice].head.pre, &(proc->sched_node));
 }
 
 void out_sched_queue(struct process_info_t* proc)
@@ -177,6 +190,7 @@ int sys_fork()
         "push %2\n"
         "push %1\n"
         "call schedulecpy\n"
+        "add $12, %%esp\n"
         "mov %%eax, %0"
         :"=g"(ret)
         :"g"(&cur_process->cpu_state),"g"(new_process),"g"(parentof(cur_process, union process_sys_page_t, process_info)->stack)
@@ -213,4 +227,9 @@ int sys_fork()
     in_sched_queue(&new_process->process_info);
     schedule();
     return new_process->process_info.pid;
+}
+
+void sys_yield()
+{
+    schedule();
 }

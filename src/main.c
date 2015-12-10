@@ -51,7 +51,7 @@ void test_slab()
 
 void user_do()
 {
-    int ret;
+    volatile int ret;
     __asm__ (
         "mov $1, %%eax\n"
         "int $0x80\n"
@@ -62,10 +62,33 @@ void user_do()
     );
     if(ret == 0)
     {
+        __asm__ (
+            "mov $2, %%eax\n"
+            "int $0x80\n"
+            :::"eax","ebx","ecx","edx","memory"
+        );
         while(1)
-            __asm__ volatile("nop;nop");
+        {
+            int t = 10000;
+            while(t--)
+                __asm__ volatile("nop;nop;nop;nop");
+            __asm__ (
+            "mov $2, %%eax\n"
+            "int $0x80\n"
+            :::"eax","ebx","ecx","edx","memory"
+        );
+        }
     }
-    while(1);
+    while(1)
+    {
+        int t = 40000;
+        while(t--);
+        __asm__ (
+            "mov $2, %%eax\n"
+            "int $0x80\n"
+            :::"eax","ebx","ecx","edx","memory"
+        );
+    }
 }
 
 int main1()
@@ -75,6 +98,7 @@ int main1()
     init_tty0_module();
     turn_to_process1();
     init_paging_module();
+    init_schedule_module();
 
     printk("\f");
     uint32_t memsize = get_sysparams()->memsize;
