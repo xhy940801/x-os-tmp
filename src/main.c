@@ -7,6 +7,7 @@
 #include "slab.h"
 #include "vfs.h"
 #include "tty0.h"
+#include "syscall.h"
 
 void print_mem_status()
 {
@@ -50,6 +51,20 @@ void test_slab()
 
 void user_do()
 {
+    int ret;
+    __asm__ (
+        "mov $1, %%eax\n"
+        "int $0x80\n"
+        "mov %%eax, %0"
+        :"=g"(ret)
+        :
+        :"eax","ebx","ecx","edx","memory"
+    );
+    if(ret == 0)
+    {
+        while(1)
+            __asm__ volatile("nop;nop");
+    }
     while(1);
 }
 
@@ -72,6 +87,8 @@ int main1()
     //test_pages();
     //test_slab();
     //printk("free memsize: %u B = %u MB\n", free_memsize, free_memsize / (1024 * 1024));
+
+    init_syscall_module();
     iret_to_user_level(user_do);
     panic("could not run here!");
     return 0;

@@ -321,7 +321,7 @@ int fd_fork(struct process_info_t* dst, struct process_info_t* src)
     {
         if(src->fd_info.fd_append[i - INNER_FD_COUNT].inode != NULL &&
             !(src->fd_info.fd_append[i - INNER_FD_COUNT].auth & VFS_FDAUTH_CLOSEONFORK))
-            vfs_bind_fd(i, src->fd_info.fds[i].auth, src->fd_info.fd_append[i - INNER_FD_COUNT].inode, &dst->fd_info);
+            vfs_bind_fd(i, src->fd_info.fd_append[i - INNER_FD_COUNT].auth, src->fd_info.fd_append[i - INNER_FD_COUNT].inode, &dst->fd_info);
     }
     return 0;
 }

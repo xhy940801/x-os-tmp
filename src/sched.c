@@ -162,6 +162,12 @@ void out_sched_queue(struct process_info_t* proc)
     circular_list_remove(&(proc->sched_node));
 }
 
+int pid_alloc()
+{
+    static int _last_pid = 100;
+    return ++_last_pid;
+}
+
 int sys_fork()
 {
     union process_sys_page_t* new_process = (union process_sys_page_t*) get_pages(1, 1, MEM_FLAGS_P | MEM_FLAGS_K);
@@ -185,7 +191,7 @@ int sys_fork()
     new_process->process_info.pid = pid_alloc();
     new_process->process_info.parent = cur_process;
     new_process->process_info.brother = cur_process->son;
-    cur_process->son = new_process;
+    cur_process->son = &new_process->process_info;
     new_process->process_info.son = NULL;
     
     new_process->process_info.rest_time = cur_process->rest_time - (cur_process->rest_time >> 1);

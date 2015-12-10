@@ -103,6 +103,8 @@ enum
     PROCESS_WAITING = 2
 };
 
+#define PID_SIZE 65536
+
 void turn_to_process1();
 
 void schedule_module_init();

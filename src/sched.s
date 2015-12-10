@@ -18,7 +18,7 @@ schedulecpy:
     mov eax, [esp + 4]
     fnsave [eax + 4]
     mov [eax], esp
-    mov [esp - 4], _ret_zero
+    mov dword [esp - 4], _ret_zero
     mov edi, [esp + 8]
     mov esi, [esp + 12]
     mov ecx, 2048

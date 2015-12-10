@@ -3,6 +3,7 @@
 #include "string.h"
 #include "sched.h"
 #include "panic.h"
+#include "printk.h"
 
 extern char _end[];
 
