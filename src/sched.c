@@ -7,6 +7,7 @@
 #include "panic.h"
 #include "tty0.h"
 #include "vfs.h"
+#include "mem.h"
 
 #define LEVEL_SIZE 16
 
@@ -33,6 +34,8 @@ static inline uint16_t flush_rest_time(struct process_info_t* proc)
 }
 
 void scheduleto(struct cpu_stat_t* dst, struct cpu_stat_t* src);
+
+int schedulecpy(struct cpu_stat_t* src, union process_sys_page_t* dst_start, union process_sys_page_t* src_start);
 
 void mktssdesc(unsigned int id, struct tss_struct_t* tss)
 {
@@ -157,4 +160,51 @@ void out_sched_queue(struct process_info_t* proc)
 {
     kassert(proc->state == PROCESS_RUNNING);
     circular_list_remove(&(proc->sched_node));
+}
+
+int sys_fork()
+{
+    union process_sys_page_t* new_process = (union process_sys_page_t*) get_pages(1, 1, MEM_FLAGS_P | MEM_FLAGS_K);
+    int ret = 3;
+    __asm__ volatile(
+        "push %3\n"
+        "push %2\n"
+        "push %1\n"
+        "call schedulecpy\n"
+        "mov %%eax, %0"
+        :"=g"(ret)
+        :"g"(&cur_process->cpu_state),"g"(new_process),"g"(parentof(cur_process, union process_sys_page_t, process_info)->stack)
+        :"memory","eax","edi","esi"
+    );
+    if(ret == 0)
+        return 0;
+    kassert(ret == 1);
+    uint32_t stack_end = (uint32_t) parentof(cur_process, union process_sys_page_t, process_info)->stack;
+    new_process->process_info.cpu_state.esp = ((uint32_t) new_process->stack) + (cur_process->cpu_state.esp - stack_end) - 4;
+    
+    new_process->process_info.pid = pid_alloc();
+    new_process->process_info.parent = cur_process;
+    new_process->process_info.brother = cur_process->son;
+    cur_process->son = new_process;
+    new_process->process_info.son = NULL;
+    
+    new_process->process_info.rest_time = cur_process->rest_time - (cur_process->rest_time >> 1);
+    cur_process->rest_time >>= 1;
+    if(cur_process->rest_time == 0)
+        cur_process->rest_time = 1;
+
+    if(mem_fork(&new_process->process_info, cur_process) < 0)
+    {
+        free_pages(new_process, 1);
+        return -1;
+    }
+    if(fd_fork(&new_process->process_info, cur_process) < 0)
+    {
+        free_pages(new_process, 1);
+        return -1;
+    }
+
+    in_sched_queue(&new_process->process_info);
+    schedule();
+    return new_process->process_info.pid;
 }

@@ -66,6 +66,7 @@ struct process_info_t
     int pid;
     struct process_info_t* parent;
     struct process_info_t* brother;
+    struct process_info_t* son;
     int last_errno;
     int sub_errno;
     uint32_t owner_id;
@@ -111,6 +112,8 @@ void in_sched_queue(struct process_info_t* proc);
 void out_sched_queue(struct process_info_t* proc);
 
 void iret_to_user_level(void* target);
+
+int sys_fork();
 
 extern struct gdt_descriptor_t _gdt[];
 extern struct process_info_t* cur_process;

@@ -34,7 +34,11 @@ uint32_t get_free_mem_size();
 //get 2 ^ n pages
 void* get_pages(size_t n, uint16_t share, uint16_t flags);
 void free_pages(void* p, size_t n);
+void* get_one_page(uint16_t share, uint16_t flags, uint32_t* physical_addr);
 
 void flush_page_table();
 
 void init_paging_module();
+
+struct process_info_t;
+int mem_fork(struct process_info_t* dst, struct process_info_t* src);

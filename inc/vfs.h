@@ -12,7 +12,8 @@ enum
 {
     VFS_FDAUTH_EXEC     = 0x01,
     VFS_FDAUTH_WRITE    = 0x02,
-    VFS_FDAUTH_READ     = 0x04
+    VFS_FDAUTH_READ     = 0x04,
+    VFS_FDAUTH_CLOSEONFORK  = 0x10
 };
 
 enum
@@ -99,3 +100,6 @@ void vfs_bind_fd(int fd, uint32_t auth, struct vfs_inode_desc_t* inode, struct f
 ssize_t sys_write(int fd, const char* buf, size_t len);
 ssize_t sys_read(int fd, char* buf, size_t len);
 int sys_fsync(int fd);
+
+struct process_info_t;
+int fd_fork(struct process_info_t* dst, struct process_info_t* src);

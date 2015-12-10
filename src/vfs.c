@@ -299,6 +299,29 @@ int sys_fsync(int fd)
         inode = cur_process->fd_info.fds[fd].inode;
     else
         inode = cur_process->fd_info.fd_append[fd - 16].inode;
+    if(inode == NULL)
+    {
+        cur_process->last_errno = EPERM;
+        return -1;
+    }
     return vfs_fsync(inode);
 }
 
+int fd_fork(struct process_info_t* dst, struct process_info_t* src)
+{
+    init_fd_info(&dst->fd_info);
+    size_t inner_size = INNER_FD_COUNT < src->fd_info.fd_size ? INNER_FD_COUNT : src->fd_info.fd_size;
+    for(size_t i = 0; i < inner_size; ++i)
+    {
+        if(src->fd_info.fds[i].inode != NULL &&
+            !(src->fd_info.fds[i].auth & VFS_FDAUTH_CLOSEONFORK))
+            vfs_bind_fd(i, src->fd_info.fds[i].auth, src->fd_info.fds[i].inode, &dst->fd_info);
+    }
+    for(size_t i = INNER_FD_COUNT; i < src->fd_info.fd_size; ++i)
+    {
+        if(src->fd_info.fd_append[i - INNER_FD_COUNT].inode != NULL &&
+            !(src->fd_info.fd_append[i - INNER_FD_COUNT].auth & VFS_FDAUTH_CLOSEONFORK))
+            vfs_bind_fd(i, src->fd_info.fds[i].auth, src->fd_info.fd_append[i - INNER_FD_COUNT].inode, &dst->fd_info);
+    }
+    return 0;
+}
