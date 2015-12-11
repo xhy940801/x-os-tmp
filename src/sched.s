@@ -1,6 +1,9 @@
 global scheduleto
 global iret_to_user_level
 global schedulecpy
+global on_timer_interrupt
+
+extern do_timer
 
 scheduleto:
     mov eax, [esp + 8]
@@ -35,7 +38,7 @@ iret_to_user_level:
 	sub eax, 0xc0000000
     push 0x2b
     push 0xb1000000
-	push 0x00
+	push 0x200
 	push 0x23
 	push eax
     mov eax, 0x2b
@@ -44,3 +47,25 @@ iret_to_user_level:
     mov fs, eax
     mov gs, eax
 	iret
+
+on_timer_interrupt:
+    push eax
+    push ecx
+    push edx
+    cld
+    cli
+    mov eax, 0x10
+    mov ds, eax
+    mov es, eax
+    mov fs, eax
+    mov gs, eax
+    call do_timer
+    mov eax, 0x2b
+    mov ds, eax
+    mov es, eax
+    mov fs, eax
+    mov gs, eax
+    pop edx
+    pop ecx
+    pop eax
+    iret

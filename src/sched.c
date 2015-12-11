@@ -9,8 +9,7 @@
 #include "vfs.h"
 #include "mem.h"
 #include "printk.h"
-
-#define LEVEL_SIZE 16
+#include "interrupt.h"
 
 union process_sys_page_t process1page;
 
@@ -21,13 +20,11 @@ struct rb_tree_head_t pc_rb_tree_head;
 
 long jiffies;
 
-static struct sched_level_desc_t sched_levels1[LEVEL_SIZE];
-static struct sched_level_desc_t sched_levels2[LEVEL_SIZE];
+static struct sched_queue_desc_t sched_queue1;
+static struct sched_queue_desc_t sched_queue2;
 
-static struct sched_level_desc_t* active_levels;
-static struct sched_level_desc_t* expire_levels;
-static uint32_t active_count;
-static uint32_t expire_count;
+static struct sched_queue_desc_t* active_queue;
+static struct sched_queue_desc_t* expire_queue;
 
 static inline uint16_t flush_rest_time(struct process_info_t* proc)
 {
@@ -83,23 +80,23 @@ void turn_to_process1()
 
 void init_schedule_module()
 {
-    for(size_t i = 0; i < LEVEL_SIZE; ++i)
+    for(size_t i = 0; i < SCHED_LEVEL_SIZE; ++i)
     {
-        circular_list_init(&(sched_levels1[i].head));
+        circular_list_init(&(sched_queue1.levels[i].head));
 
-        circular_list_init(&(sched_levels2[i].head));
+        circular_list_init(&(sched_queue2.levels[i].head));
     }
-    active_levels = sched_levels1;
-    expire_levels = sched_levels2;
+    active_queue = &sched_queue1;
+    expire_queue = &sched_queue2;
 
-    active_count = 0;
-    expire_count = 0;
+    active_queue->count = 0;
+    expire_queue->count = 0;
     in_sched_queue(cur_process);
 }
 
 void schedule()
 {
-    kassert(cur_process->nice < LEVEL_SIZE);
+    kassert(cur_process->nice < SCHED_LEVEL_SIZE);
 
     --cur_process->rest_time;
     if(cur_process->state == PROCESS_RUNNING)
@@ -108,31 +105,35 @@ void schedule()
         if(cur_process->rest_time == 0)
         {
             cur_process->rest_time = flush_rest_time(cur_process);
-            circular_list_insert(expire_levels[cur_process->nice].head.pre, &(cur_process->sched_node));
-            --active_count;
-            ++expire_count;
+            circular_list_insert(expire_queue->levels[cur_process->nice].head.pre, &(cur_process->sched_node));
+            --active_queue->count;
+            ++expire_queue->count;
+            cur_process->sched_queue = expire_queue;
         }
         else
-            circular_list_insert(active_levels[cur_process->nice].head.pre, &(cur_process->sched_node));
+            circular_list_insert(active_queue->levels[cur_process->nice].head.pre, &(cur_process->sched_node));
     }
-    if(active_count == 0)
+    if(active_queue->count == 0)
     {
         //printk("change\n");
-        struct sched_level_desc_t* t_levels = active_levels;
-        active_levels = expire_levels;
-        expire_levels = t_levels;
-
-        uint32_t t_count = active_count;
-        active_count = expire_count;
-        expire_count = t_count;
+        struct sched_queue_desc_t* t_queue = active_queue;
+        active_queue = expire_queue;
+        expire_queue = t_queue;
     }
     
     struct process_info_t* new_process = &process1page.process_info;
-    for(size_t i = LEVEL_SIZE - 1; i < LEVEL_SIZE; --i)
+    for(size_t i = SCHED_LEVEL_SIZE - 1; i < SCHED_LEVEL_SIZE; --i)
     {
-        if(circular_list_is_empty(&active_levels[i].head))
+        if(circular_list_is_empty(&active_queue->levels[i].head))
             continue;
-        new_process = parentof(active_levels[i].head.next, struct process_info_t, sched_node);
+        /*printk(
+            "\x1b\x0c""[%u] [%u] [%u] [%u]""\x1b\x07",
+            active_queue->count,
+            circular_list_size(&sched_queue1.levels[i].head),
+            expire_queue->count,
+            circular_list_size(&sched_queue2.levels[i].head)
+        );*/
+        new_process = parentof(active_queue->levels[i].head.next, struct process_info_t, sched_node);
     }
 
     //printk("from pid [%d] to pid [%d]\n", cur_process->pid, new_process->pid);
@@ -151,28 +152,25 @@ void schedule()
 
 void in_sched_queue(struct process_info_t* proc)
 {
-    kassert(active_levels != NULL);
-    kassert(expire_levels != NULL);
-    struct sched_level_desc_t* t_levels;
+    kassert(active_queue != NULL);
+    kassert(expire_queue != NULL);
     if(proc->rest_time > 0)
-    {
-        t_levels = active_levels;
-        ++active_count;
-    }
+        proc->sched_queue = active_queue;
     else
     {
-        t_levels = expire_levels;
+        proc->sched_queue = expire_queue;
         proc->rest_time = flush_rest_time(proc);
-        ++expire_count;
     }
     proc->state = PROCESS_RUNNING;
-    circular_list_insert(t_levels[proc->nice].head.pre, &(proc->sched_node));
+    circular_list_insert(proc->sched_queue->levels[proc->nice].head.pre, &(proc->sched_node));
+    ++proc->sched_queue->count;
 }
 
 void out_sched_queue(struct process_info_t* proc)
 {
     kassert(proc->state == PROCESS_RUNNING);
     circular_list_remove(&(proc->sched_node));
+    --proc->sched_queue->count;
 }
 
 int pid_alloc()
@@ -227,6 +225,39 @@ int sys_fork()
     in_sched_queue(&new_process->process_info);
     schedule();
     return new_process->process_info.pid;
+}
+
+void do_timer()
+{
+    const size_t PROC_LEN = 32;
+    ++jiffies;
+    struct process_info_t* procs[PROC_LEN];
+    while(1)
+    {
+        size_t len = ready_processes(procs, PROC_LEN);
+        for(size_t i = 0; i < len; ++i)
+            in_sched_queue(procs[i]);
+        if(len < PROC_LEN)
+            break;
+    }
+    _outb(0x20, 0x20);
+    schedule();
+}
+
+void on_timer_interrupt();
+
+void init_auto_schedule_module()
+{
+    setup_intr_desc(0x20, on_timer_interrupt, 0);
+
+    const size_t hz = 1000;
+    const size_t thz = 1193180;
+    const size_t od = thz / hz;
+    _outb(0x43, 0x36);
+    _outb(0x40, od & 0xff);
+    _outb(0x40, (od >> 8) & 0xff);
+
+    clear_8259_mask(0);
 }
 
 void sys_yield()

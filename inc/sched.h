@@ -36,6 +36,8 @@ struct tss_struct_t
 };
 #pragma pack()
 
+#define SCHED_LEVEL_SIZE 16
+
 struct cpu_stat_t
 {
     uint32_t esp;
@@ -53,6 +55,8 @@ struct waitlist_node_desc_t
     };
 };
 
+struct sched_queue_desc_t;
+
 struct process_info_t
 {
     //rb-tree
@@ -62,6 +66,7 @@ struct process_info_t
     uint8_t original_nice;
     uint16_t state;
     struct list_node_t sched_node;
+    struct sched_queue_desc_t* sched_queue;
     //process-info
     int pid;
     struct process_info_t* parent;
@@ -94,6 +99,13 @@ union process_sys_page_t
 struct sched_level_desc_t
 {
     struct list_node_t head;
+    uint32_t count;
+};
+
+struct sched_queue_desc_t
+{
+    struct sched_level_desc_t levels[SCHED_LEVEL_SIZE];
+    uint32_t count;
 };
 
 enum
@@ -113,6 +125,8 @@ void in_sched_queue(struct process_info_t* proc);
 void out_sched_queue(struct process_info_t* proc);
 
 void iret_to_user_level(void* target);
+
+void init_auto_schedule_module();
 
 int sys_fork();
 void sys_yield();

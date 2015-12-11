@@ -279,7 +279,7 @@ void init_paging_module()
 void process_cow(unsigned e_code)
 {
     uint32_t cr2 = _gcr2();
-    printk("cow! cr2 [%u]\n", cr2);
+    //printk("cow! cr2 [%u]\n", cr2);
     kassert(cur_process->catalog_table_v[cr2 >> 22] & 0x01);
     uint32_t* page_table;
     struct mem_desc_t* desc = mem_descs + (cur_process->catalog_table_v[cr2 >> 22] >> 12);
@@ -301,14 +301,14 @@ void process_cow(unsigned e_code)
                 if(old_page_table[i] & 0x01)
                 {
                     struct mem_desc_t* tdesc = mem_descs + (page_table[i] >> 12);
-                    printk("cao i [%u] offset [%u]\n", i, page_table[i]);
+                    //printk("cao i [%u] offset [%u]\n", i, page_table[i]);
                     ++tdesc->share;
                     tdesc->flags |= MEM_FLAGS_S;
                 }
             }
-            printk("cow3! cr2 [%u]\n", cr2);
+            //printk("cow3! cr2 [%u]\n", cr2);
             cur_process->catalog_table_v[cr2 >> 22] = physical_addr | 0x07;
-            printk("cow4! cr2 [%u]\n", cr2);
+            //printk("cow4! cr2 [%u]\n", cr2);
         }
         else
         {
@@ -355,14 +355,14 @@ void process_cow(unsigned e_code)
 
 void process_lack_page(unsigned e_code)
 {
-    printk("e_code [%d]\n", e_code);
+    //printk("e_code [%d]\n", e_code);
     if(e_code & 0x01)
         return process_cow(e_code);
     uint32_t cr2 = _gcr2();
-    printk("cr2 [%u]\n", cr2);
+    //printk("cr2 [%u]\n", cr2);
     kassert(cr2 < KMEM_START);
     uint32_t* page_table;
-    printk("catalog [%u]\n", cur_process->catalog_table_v);
+    //printk("catalog [%u]\n", cur_process->catalog_table_v);
     if((cur_process->catalog_table_v[cr2 >> 22] & 0x01) == 0)
     {
         kassert((cur_process->catalog_table_v[cr2 >> 22] & 0x67) == 0x06);
@@ -383,7 +383,7 @@ void process_lack_page(unsigned e_code)
 int mem_fork(struct process_info_t* dst, struct process_info_t* src)
 {
     dst->catalog_table_v = get_one_page(1, MEM_FLAGS_P | MEM_FLAGS_K | MEM_FLAGS_T, &dst->cpu_state.catalog_table_p);
-    printk("catlog-at [%u]\n\n", dst->cpu_state.catalog_table_p);
+    //printk("catlog-at [%u]\n\n", dst->cpu_state.catalog_table_p);
     _memcpy(dst->catalog_table_v + 768, src->catalog_table_v + 768, 256 * sizeof(uint32_t));
     for(size_t i = 0; i < 768; ++i)
     {

@@ -55,6 +55,7 @@ _reset_pos:
     call check287or387
 
     mov esp, process1page + 8192
+    cli
     call main1
     jmp $
 

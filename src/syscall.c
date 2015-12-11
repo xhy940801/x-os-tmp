@@ -5,6 +5,7 @@
 #include "printk.h"
 #include "sched.h"
 #include "panic.h"
+#include "wait.h"
 
 void sys_call();
 
@@ -22,6 +23,7 @@ void init_syscall_module()
         syscalls[i].callback = NULL;
     syscall_register(1, sys_fork);
     syscall_register(2, sys_yield);
+    syscall_register(3, sys_tsleep);
 }
 
 int sys_call_fail(int n)

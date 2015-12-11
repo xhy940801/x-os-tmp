@@ -8,6 +8,9 @@
 #include "vfs.h"
 #include "tty0.h"
 #include "syscall.h"
+#include "interrupt.h"
+#include "asm.h"
+#include "wait.h"
 
 void print_mem_status()
 {
@@ -49,46 +52,16 @@ void test_slab()
     printk("%s: free memsize: %u B = %u MB\n", __func__, free_memsize, free_memsize / (1024 * 1024));
 }
 
-void user_do()
+void user_do();
+
+void fucking_irq7();
+
+void print_fuck_irq7()
 {
-    volatile int ret;
-    __asm__ (
-        "mov $1, %%eax\n"
-        "int $0x80\n"
-        "mov %%eax, %0"
-        :"=g"(ret)
-        :
-        :"eax","ebx","ecx","edx","memory"
-    );
-    if(ret == 0)
-    {
-        __asm__ (
-            "mov $2, %%eax\n"
-            "int $0x80\n"
-            :::"eax","ebx","ecx","edx","memory"
-        );
-        while(1)
-        {
-            int t = 10000;
-            while(t--)
-                __asm__ volatile("nop;nop;nop;nop");
-            __asm__ (
-            "mov $2, %%eax\n"
-            "int $0x80\n"
-            :::"eax","ebx","ecx","edx","memory"
-        );
-        }
-    }
-    while(1)
-    {
-        int t = 40000;
-        while(t--);
-        __asm__ (
-            "mov $2, %%eax\n"
-            "int $0x80\n"
-            :::"eax","ebx","ecx","edx","memory"
-        );
-    }
+    static int c = 0;
+    ++c;
+    if(c % 10 == 0)
+        printk("fucking irq7 count [%d]\n", c);
 }
 
 int main1()
@@ -99,6 +72,9 @@ int main1()
     turn_to_process1();
     init_paging_module();
     init_schedule_module();
+    init_wait_module();
+
+    //clear_8259_mask(2);
 
     printk("\f");
     uint32_t memsize = get_sysparams()->memsize;
@@ -113,6 +89,10 @@ int main1()
     //printk("free memsize: %u B = %u MB\n", free_memsize, free_memsize / (1024 * 1024));
 
     init_syscall_module();
+
+    init_auto_schedule_module();
+    //Incomprehensibly occur IRQ7!!! Ignore it!
+    setup_intr_desc(0x27, fucking_irq7, 0);
     iret_to_user_level(user_do);
     panic("could not run here!");
     return 0;
