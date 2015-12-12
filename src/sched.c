@@ -70,6 +70,8 @@ void turn_to_process1()
     vfs_bind_fd(2, VFS_FDAUTH_WRITE, get_tty0_inode(), &process1page.process_info.fd_info);
     process1page.process_info.fd_info.fd_size = 3;
 
+    process1page.process_info.task_locker.lock_count = 1;
+
     rb_tree_init(&pc_rb_tree_head, &(process1page.process_info.rb_node));
 
     mktssdesc(3, &cpu0tss);
@@ -249,6 +251,8 @@ int sys_fork()
 
 void do_timer()
 {
+    v_lock_task();
+    printk("timer [%u]\n", cur_process->task_locker.lock_count);
     //static size_t nc = 0;
     const size_t PROC_LEN = 32;
     //if(nc < 8)
@@ -264,7 +268,9 @@ void do_timer()
         if(len < PROC_LEN)
             break;
     }
+    printk("timer-end\n");
     schedule();
+    v_unlock_task();
 }
 
 void on_timer_interrupt();

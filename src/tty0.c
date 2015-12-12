@@ -5,6 +5,7 @@
 
 #include "asm.h"
 #include "vfs.h"
+#include "task_locker.h"
 
 static struct tty0_vfs_inode_desc_t tty0_inode;
 static struct vfs_desc_t tty0_vfs;

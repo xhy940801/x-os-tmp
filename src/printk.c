@@ -8,12 +8,12 @@
 
 void _printchar(char c)
 {
-    sys_write(1, &c, 1);
+    vfs_sys_write(1, &c, 1);
 }
 
 void _printstr(const char* str)
 {
-    sys_write(1, str, strlen(str));
+    vfs_sys_write(1, str, strlen(str));
 }
 
 void _printint(int num)

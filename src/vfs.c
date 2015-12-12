@@ -251,7 +251,7 @@ void vfs_bind_fd(int fd, uint32_t auth, struct vfs_inode_desc_t* inode, struct f
     ++inode->open_count;
 }
 
-ssize_t sys_write(int fd, const char* buf, size_t len)
+ssize_t vfs_sys_write(int fd, const char* buf, size_t len)
 {
     if(fd < 0 || fd >= cur_process->fd_info.fd_size)
     {
@@ -269,7 +269,7 @@ ssize_t sys_write(int fd, const char* buf, size_t len)
     return -1;
 }
 
-ssize_t sys_read(int fd, char* buf, size_t len)
+ssize_t vfs_sys_read(int fd, char* buf, size_t len)
 {
     if(fd < 0 || fd >= cur_process->fd_info.fd_size)
     {
@@ -287,7 +287,7 @@ ssize_t sys_read(int fd, char* buf, size_t len)
     return -1;
 }
 
-int sys_fsync(int fd)
+int vfs_sys_fsync(int fd)
 {
     if(fd < 0 || fd >= cur_process->fd_info.fd_size)
     {
@@ -325,3 +325,35 @@ int fd_fork(struct process_info_t* dst, struct process_info_t* src)
     }
     return 0;
 }
+
+int sys_write(int fd, const char* buf, size_t len)
+{
+    if(((unsigned long) buf) >= MEM_START)
+    {
+        cur_process->last_errno = ENOMEM;
+        return -1;
+    }
+    if((MEM_START - ((unsigned long) buf)) < len)
+    {
+        cur_process->last_errno = ENOMEM;
+        return -1;
+    }
+    return vfs_sys_write(fd, buf, len);
+}
+
+int sys_read(int fd, char* buf, size_t len)
+{
+    if(((unsigned long) buf) >= MEM_START)
+    {
+        cur_process->last_errno = ENOMEM;
+        return -1;
+    }
+    if((MEM_START - ((unsigned long) buf)) < len)
+    {
+        cur_process->last_errno = ENOMEM;
+        return -1;
+    }
+    return vfs_sys_read(fd, buf, len);
+}
+
+

@@ -18,3 +18,13 @@ void unlock_task()
     if(cur_process->task_locker.lock_count == 0)
         _sti();
 }
+
+void v_lock_task()
+{
+    ++cur_process->task_locker.lock_count;
+}
+
+void v_unlock_task()
+{
+    --cur_process->task_locker.lock_count;
+}

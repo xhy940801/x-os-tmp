@@ -3,6 +3,11 @@ global on_lack_of_page
 extern process_lack_page
 
 on_lack_of_page:
+    push ds
+    push es
+    push fs
+    push gs
+
     push eax
     push ecx
     push edx
@@ -17,13 +22,13 @@ on_lack_of_page:
     mov gs, eax
     call process_lack_page
     add esp, 4
-    mov eax, 0x2b
-    mov ds, eax
-    mov es, eax
-    mov fs, eax
-    mov gs, eax
     pop edx
     pop ecx
     pop eax
+
+    pop gs
+    pop fs
+    pop es
+    pop ds
     add esp, 4
     iret

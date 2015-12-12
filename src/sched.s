@@ -49,6 +49,11 @@ iret_to_user_level:
 	iret
 
 on_timer_interrupt:
+    push ds
+    push es
+    push fs
+    push gs
+
     push eax
     push ecx
     push edx
@@ -60,12 +65,12 @@ on_timer_interrupt:
     mov fs, eax
     mov gs, eax
     call do_timer
-    mov eax, 0x2b
-    mov ds, eax
-    mov es, eax
-    mov fs, eax
-    mov gs, eax
     pop edx
     pop ecx
     pop eax
+
+    pop gs
+    pop fs
+    pop es
+    pop ds
     iret

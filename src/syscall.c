@@ -6,6 +6,7 @@
 #include "sched.h"
 #include "panic.h"
 #include "wait.h"
+#include "vfs.h"
 
 void sys_call();
 
@@ -21,9 +22,12 @@ void init_syscall_module()
     setup_trap_desc(0x80, sys_call, 3);
     for(size_t i = 0; i < SYSCALL_SIZE; ++i)
         syscalls[i].callback = NULL;
-    syscall_register(1, sys_fork);
-    syscall_register(2, sys_yield);
-    syscall_register(3, sys_tsleep);
+    syscall_register(0x01, sys_fork);
+    syscall_register(0x02, sys_yield);
+    syscall_register(0x03, sys_tsleep);
+
+    syscall_register(0x10, sys_write);
+    syscall_register(0x11, sys_read);
 }
 
 int sys_call_fail(int n)

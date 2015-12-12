@@ -10,3 +10,7 @@ struct task_locker_desc_t
 void lock_task();
 
 void unlock_task();
+
+void v_lock_task();
+
+void v_unlock_task();

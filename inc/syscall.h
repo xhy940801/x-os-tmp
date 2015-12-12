@@ -1,6 +1,6 @@
 #pragma once
 
-#define SYSCALL_SIZE 16
+#define SYSCALL_SIZE 256
 
 void init_syscall_module();
 
