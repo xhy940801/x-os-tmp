@@ -10,6 +10,10 @@
 #include "asm.h"
 #include "sched.h"
 #include "buddy.h"
+#include "exec.h"
+#include "interrupt.h"
+
+void on_lack_of_page();
 
 extern char _end[];
 static struct mem_desc_t* mem_descs = NULL;
@@ -219,6 +223,7 @@ uint32_t get_free_mem_size()
 
 void* get_pages(size_t n, uint16_t share, uint16_t flags)
 {
+    lock_task();
     void* p = get_address_area(n);
     size_t pcount = 1 << n;
     uint32_t cp = (uint32_t) p;
@@ -226,14 +231,17 @@ void* get_pages(size_t n, uint16_t share, uint16_t flags)
     {
         struct mem_desc_t* desc = getonefreepage(share, flags);
         mapping_page(cp, (desc - mem_descs) * 4096, 7);
+        desc->point = (void*) cp;
         cp += 4096;
     }
     _memset(p, 0, pcount * 4096);
+    unlock_task();
     return p;
 }
 
 void free_pages(void* p, size_t n)
 {
+    lock_task();
     size_t pcount = 1 << n;
     uint32_t cp = (uint32_t) p;
     for(size_t i = 0; i < pcount; ++i)
@@ -245,9 +253,169 @@ void free_pages(void* p, size_t n)
     }
     free_address_area(p, n);
     flush_page_table();
+    unlock_task();
 }
 
-void flush_page_table()
+void* get_one_page(uint16_t share, uint16_t flags, uint32_t* physical_addr)
+{
+    lock_task();
+    void* p = get_address_area(0);
+    uint32_t cp = (uint32_t) p;
+    struct mem_desc_t* desc = getonefreepage(share, flags);
+    *physical_addr = (desc - mem_descs) * 4096;
+    mapping_page(cp, *physical_addr, 7);
+    _memset(p, 0, 4096);
+    desc->point = p;
+    unlock_task();
+    return p;
+}
+
+inline void flush_page_table()
 {
     _lcr3(cur_process->cpu_state.catalog_table_p);
+}
+
+void init_paging_module()
+{
+    for(size_t i = 0; i < 768; ++i)
+        cur_process->catalog_table_v[i] = 0x06;
+    setup_trap_desc(14, on_lack_of_page, 0);
+}
+
+void process_cow(unsigned e_code)
+{
+    uint32_t cr2 = _gcr2();
+    //printk("cow! cr2 [%u]\n", cr2);
+    kassert(cur_process->catalog_table_v[cr2 >> 22] & 0x01);
+    uint32_t* page_table;
+
+    lock_task();
+
+    struct mem_desc_t* desc = mem_descs + (cur_process->catalog_table_v[cr2 >> 22] >> 12);
+    if((cur_process->catalog_table_v[cr2 >> 22] & 0x02) == 0)
+    {
+        kassert(desc->flags & MEM_FLAGS_S);
+        kassert(desc->flags & MEM_FLAGS_K);
+        kassert(desc->point);
+        kassert(desc->share >= 1);
+
+        if(desc->share > 1)
+        {
+            uint32_t physical_addr;
+            page_table = (uint32_t*) get_one_page(1, MEM_FLAGS_P | MEM_FLAGS_K | MEM_FLAGS_T, &physical_addr);
+            uint32_t* old_page_table = (uint32_t*) desc->point;
+            for(size_t i = 0; i < 1024; ++i)
+            {
+                page_table[i] = old_page_table[i] & ~((uint32_t) 0x02);
+                if(old_page_table[i] & 0x01)
+                {
+                    struct mem_desc_t* tdesc = mem_descs + (page_table[i] >> 12);
+                    //printk("cao i [%u] offset [%u]\n", i, page_table[i]);
+                    ++tdesc->share;
+                    tdesc->flags |= MEM_FLAGS_S;
+                }
+            }
+            //printk("cow3! cr2 [%u]\n", cr2);
+            cur_process->catalog_table_v[cr2 >> 22] = physical_addr | 0x07;
+            //printk("cow4! cr2 [%u]\n", cr2);
+        }
+        else
+        {
+            cur_process->catalog_table_v[cr2 >> 22] |= 0x02;
+            uint32_t* old_page_table = (uint32_t*) desc->point;
+            for(size_t i = 0; i < 1024; ++i)
+                old_page_table[i] &= ~((uint32_t) 0x02);
+            desc->flags &= ~MEM_FLAGS_S;
+            page_table = (uint32_t*) desc->point;
+        }
+    }
+    else
+        page_table = (uint32_t*) desc->point;
+
+    unlock_task();
+
+    kassert((page_table[(cr2 >> 12) & 0x3ff] & 0x02) == 0);
+
+    lock_task();
+
+    desc = mem_descs + (page_table[(cr2 >> 12) & 0x3ff] >> 12);
+
+    kassert(desc->flags & MEM_FLAGS_S);
+    kassert(desc->share >= 1);
+
+    if(desc->share > 1)
+    {
+        void* p = get_address_area(0);
+        mapping_page((uint32_t) p, page_table[(cr2 >> 12) & 0x3ff] & 0xfffff000, 7);
+
+        struct mem_desc_t* desc = getonefreepage(1, MEM_FLAGS_P);
+        uint32_t physical_addr = (desc - mem_descs) * 4096;
+        page_table[(cr2 >> 12) & 0x3ff] = physical_addr | 0x07;
+        flush_page_table();
+        _memcpy((void*) (cr2 & 0xfffff000), p, 4096);
+        --desc->share;
+
+        unmapping_page((uint32_t) p);
+        free_address_area(p, 0);
+    }
+    else
+    {
+        page_table[(cr2 >> 12) & 0x3ff] |= 0x02;
+        desc->flags &= ~MEM_FLAGS_S;
+    }
+    flush_page_table();
+    unlock_task();
+}
+
+void process_lack_page(unsigned e_code)
+{
+    //printk("e_code [%d]\n", e_code);
+    if(e_code & 0x01)
+        return process_cow(e_code);
+    uint32_t cr2 = _gcr2();
+    //printk("cr2 [%u]\n", cr2);
+    kassert(cr2 < KMEM_START);
+    uint32_t* page_table;
+    //printk("catalog [%u]\n", cur_process->catalog_table_v);
+    if((cur_process->catalog_table_v[cr2 >> 22] & 0x01) == 0)
+    {
+        kassert((cur_process->catalog_table_v[cr2 >> 22] & 0x67) == 0x06);
+        uint32_t physical_addr;
+        page_table = (uint32_t*) get_one_page(1, MEM_FLAGS_P | MEM_FLAGS_K | MEM_FLAGS_T, &physical_addr);
+        _memset(page_table, 0x06, 4096);
+        cur_process->catalog_table_v[cr2 >> 22] = physical_addr | 0x07;
+    }
+    else
+    {
+        size_t offset = (cur_process->catalog_table_v[cr2 >> 22] >> 12);
+        page_table = (uint32_t*) mem_descs[offset].point;
+    }
+    lock_task();
+    struct mem_desc_t* desc = getonefreepage(1, MEM_FLAGS_P);
+    uint32_t physical_addr = (desc - mem_descs) * 4096;
+    unlock_task();
+    page_table[(cr2 >> 12) & 0x3ff] = physical_addr | 0x07;
+    int ret = load_program((void*) (cr2 & 0xfffff000), cur_process);
+    kassert(ret == 0);
+}
+
+int mem_fork(struct process_info_t* dst, struct process_info_t* src)
+{
+    dst->catalog_table_v = get_one_page(1, MEM_FLAGS_P | MEM_FLAGS_K | MEM_FLAGS_T, &dst->cpu_state.catalog_table_p);
+    //printk("catlog-at [%u]\n\n", dst->cpu_state.catalog_table_p);
+    _memcpy(dst->catalog_table_v + 768, src->catalog_table_v + 768, 256 * sizeof(uint32_t));
+    for(size_t i = 0; i < 768; ++i)
+    {
+        lock_task();
+        src->catalog_table_v[i] &= ~((uint32_t) 2);
+        dst->catalog_table_v[i] = src->catalog_table_v[i];
+        if(src->catalog_table_v[i] & 1)
+        {
+            struct mem_desc_t* desc = mem_descs + (src->catalog_table_v[i] >> 12);
+            ++desc->share;
+            desc->flags |= MEM_FLAGS_S;
+        }
+        unlock_task();
+    }
+    return 0;
 }

@@ -7,6 +7,7 @@
 #include "rb_tree.h"
 #include "wait.h"
 #include "ksemaphore.h"
+#include "task_locker.h"
 
 #pragma pack(1)
 
@@ -36,12 +37,26 @@ struct tss_struct_t
 };
 #pragma pack()
 
+#define SCHED_LEVEL_SIZE 16
+
 struct cpu_stat_t
 {
     uint32_t esp;
     uint32_t catalog_table_p;
     char fpu_state[108];
 };
+
+struct waitlist_node_desc_t
+{
+    struct list_node_t node;
+    union
+    {
+        int waiting;
+        size_t demand;
+    };
+};
+
+struct sched_queue_desc_t;
 
 struct process_info_t
 {
@@ -52,10 +67,14 @@ struct process_info_t
     uint8_t original_nice;
     uint16_t state;
     struct list_node_t sched_node;
+    struct sched_queue_desc_t* sched_queue;
+    //task_locker
+    struct task_locker_desc_t task_locker;
     //process-info
     int pid;
     struct process_info_t* parent;
     struct process_info_t* brother;
+    struct process_info_t* son;
     int last_errno;
     int sub_errno;
     uint32_t owner_id;
@@ -63,20 +82,33 @@ struct process_info_t
     uint32_t sign;
     //for-wait
     struct sleep_desc_t sleep_info;
-    struct ksemaphore_node_t semaphore_node;
+    struct waitlist_node_desc_t waitlist_node;
     //sched
     uint16_t rest_time;
+    uint16_t _padding;
     //fd-info
     struct fd_info_t fd_info;
     //cpu state
-    void* catalog_table_v;
+    uint32_t* catalog_table_v;
     struct cpu_stat_t cpu_state;
+};
+
+union process_sys_page_t
+{
+    char stack[8192];
+    struct process_info_t process_info;
 };
 
 struct sched_level_desc_t
 {
     struct list_node_t head;
-    size_t count;
+    uint32_t count;
+};
+
+struct sched_queue_desc_t
+{
+    struct sched_level_desc_t levels[SCHED_LEVEL_SIZE];
+    uint32_t count;
 };
 
 enum
@@ -85,13 +117,23 @@ enum
     PROCESS_WAITING = 2
 };
 
+#define PID_SIZE 65536
+#define TIMER_HZ 1000
+
 void turn_to_process1();
 
-void schedule_module_init();
+void init_schedule_module();
 void schedule();
 
 void in_sched_queue(struct process_info_t* proc);
 void out_sched_queue(struct process_info_t* proc);
+
+void iret_to_user_level(void* target);
+
+void init_auto_schedule_module();
+
+int sys_fork();
+void sys_yield();
 
 extern struct gdt_descriptor_t _gdt[];
 extern struct process_info_t* cur_process;

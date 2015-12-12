@@ -12,7 +12,7 @@
 static struct time_wheel_desc_t time_wheel[WHEEL_SIZE];
 static struct list_node_t wait_list_head;
 
-void wait_module_init()
+void init_wait_module()
 {
     for(size_t i = 0; i < WHEEL_SIZE; ++i)
         circular_list_init(&(time_wheel[i].head));
@@ -42,9 +42,9 @@ uint32_t ready_processes(struct process_info_t* procs[], uint32_t max)
 {
     size_t i;
     struct list_node_t* node = time_wheel[WHEEL_HASH(jiffies)].head.next;
-    for(i = 0; i < max;)
+    for(i = 0; i < max; node = node->next)
     {
-        if(node == NULL)
+        if(node == &time_wheel[WHEEL_HASH(jiffies)].head)
             return i;
         struct process_info_t* proc = parentof(node, struct process_info_t, sleep_info.node);
         if(proc->sleep_info.wakeup_jiffies > jiffies)
@@ -55,4 +55,15 @@ uint32_t ready_processes(struct process_info_t* procs[], uint32_t max)
         ++i;
     }
     return i;
+}
+
+int sys_tsleep(uint32_t timeout)
+{
+    out_sched_queue(cur_process);
+    if(timeout == 0)
+        kwait(cur_process);
+    else
+        ksleep(cur_process, timeout);
+    schedule();
+    return 0;
 }

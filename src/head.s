@@ -1,7 +1,7 @@
 SYSPOS equ 0xc0100000
 
 extern main1
-extern system_stack
+extern process1page
 
 global startup_32
 global _idt
@@ -34,7 +34,7 @@ setregs:
 
 
     mov ss, eax
-    mov esp, system_stack - SYSPOS + 0x200000 + 4096
+    mov esp, process1page - SYSPOS + 0x200000 + 8192
 
     mov eax, [0x90000]
     mov [_bios_sys_params - SYSPOS + 0x200000], eax
@@ -48,13 +48,14 @@ setregs:
 
     jmp 0x08:_reset_pos
 _reset_pos:
-    mov esp, system_stack + 4096
+    mov esp, process1page + 8192
 
     call setup_idt
     call setup_gdt
     call check287or387
 
-    mov esp, system_stack + 4096
+    mov esp, process1page + 8192
+    cli
     call main1
     jmp $
 
@@ -152,11 +153,11 @@ ignore_idt:
 
 idt_descr:
     dw 256 * 8 - 1
-    dd _idt - 0xc0000000 + 0x100000
+    dd _idt
 
 gdt_descr:
     dw 256 * 8 - 1
-    dd _gdt - 0xc0000000 + 0x100000
+    dd _gdt
 
 align 8
 _idt:
@@ -168,8 +169,8 @@ _gdt:
     dq 0x00cf9a000000ffff
     dq 0x00cf92000000ffff
     dq 0x0000000000000000
-    dq 0x00cb9a000000ffff
-    dq 0x00cb92000000ffff
+    dq 0x00cbfa000000ffff
+    dq 0x00cbf2000000ffff
     times 250 dq 0
 _bios_sys_params:
     dq 0

@@ -12,7 +12,7 @@ _memcpy:
     rep movsd
     mov ecx, [esp + 20]
     and ecx, 0x04
-    rep stosb
+    rep movsb
     pop esi
     pop edi
     ret

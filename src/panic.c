@@ -1,6 +1,7 @@
 #include "panic.h"
 
 #include "printk.h"
+#include "sched.h"
 
 void panic(const char* str)
 {

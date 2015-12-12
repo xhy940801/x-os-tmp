@@ -7,6 +7,10 @@
 #include "slab.h"
 #include "vfs.h"
 #include "tty0.h"
+#include "syscall.h"
+#include "interrupt.h"
+#include "asm.h"
+#include "wait.h"
 
 void print_mem_status()
 {
@@ -48,12 +52,22 @@ void test_slab()
     printk("%s: free memsize: %u B = %u MB\n", __func__, free_memsize, free_memsize / (1024 * 1024));
 }
 
+void user_do();
+
+void on_spurious_irq();
+
 int main1()
 {
     init_sysparams();
     init_vfs_module();
     init_tty0_module();
     turn_to_process1();
+    init_paging_module();
+    init_schedule_module();
+    init_wait_module();
+
+    //clear_8259_mask(2);
+
     printk("\f");
     uint32_t memsize = get_sysparams()->memsize;
     printk("memsize: %u B = %u MB\n", memsize, memsize / (1024 * 1024));
@@ -65,6 +79,13 @@ int main1()
     //test_pages();
     //test_slab();
     //printk("free memsize: %u B = %u MB\n", free_memsize, free_memsize / (1024 * 1024));
+
+    init_syscall_module();
+
+    //init_auto_schedule_module();
+    //Incomprehensibly occur IRQ7!!! Ignore it!
+    setup_intr_desc(0x27, on_spurious_irq, 0);
+    iret_to_user_level(user_do);
     panic("could not run here!");
     return 0;
 }

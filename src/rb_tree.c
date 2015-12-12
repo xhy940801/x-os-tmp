@@ -1,5 +1,7 @@
 #include "rb_tree.h"
 
+#include "stddef.h"
+
 struct rb_tree_node_t nil[1];
 
 static inline void left_rotate(struct rb_tree_node_t* node)
@@ -269,3 +271,41 @@ void rb_tree_rebalance(struct rb_tree_node_t* root, struct rb_tree_node_t* node)
         }
     }
 }
+
+struct rb_tree_node_t* rb_tree_next(struct rb_tree_head_t* head, struct rb_tree_node_t* node)
+{
+    if(node->right != nil)
+    {
+        node = node->right;
+        while(node->left != nil)
+            node = node->left;
+        return node;
+    }
+    while(node != head->pre_root.left)
+    {
+        if(node->parent->left == node)
+            return node->parent;
+        node = node->parent;
+    }
+    return NULL;
+}
+
+struct rb_tree_node_t* rb_tree_prev(struct rb_tree_head_t* head, struct rb_tree_node_t* node)
+{
+    if(node->left != nil)
+    {
+        node = node->left;
+        while(node->right != nil)
+            node = node->right;
+        return node;
+    }
+    while(node != head->pre_root.left)
+    {
+        if(node->parent->right == node)
+            return node->parent;
+        node = node->parent;
+    }
+    return NULL;
+}
+
+

@@ -4,12 +4,6 @@
 
 #include "circular_list.h"
 
-struct ksemaphore_node_t
-{
-    struct list_node_t node;
-    size_t demand;
-};
-
 struct ksemaphore_desc_t
 {
     struct list_node_t head;
