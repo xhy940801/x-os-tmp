@@ -7,6 +7,7 @@
 #include "rb_tree.h"
 #include "wait.h"
 #include "ksemaphore.h"
+#include "task_locker.h"
 
 #pragma pack(1)
 
@@ -67,6 +68,8 @@ struct process_info_t
     uint16_t state;
     struct list_node_t sched_node;
     struct sched_queue_desc_t* sched_queue;
+    //task_locker
+    struct task_locker_desc_t task_locker;
     //process-info
     int pid;
     struct process_info_t* parent;
@@ -115,6 +118,7 @@ enum
 };
 
 #define PID_SIZE 65536
+#define TIMER_HZ 1000
 
 void turn_to_process1();
 

@@ -18,7 +18,7 @@ struct syscall_desc_t syscalls[SYSCALL_SIZE];
 
 void init_syscall_module()
 {
-    setup_intr_desc(0x80, sys_call, 3);
+    setup_trap_desc(0x80, sys_call, 3);
     for(size_t i = 0; i < SYSCALL_SIZE; ++i)
         syscalls[i].callback = NULL;
     syscall_register(1, sys_fork);

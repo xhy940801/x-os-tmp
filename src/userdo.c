@@ -1,37 +1,4 @@
-static int fork()
-{
-    int _v;
-    __asm__ (
-        "mov $1, %%eax\n"
-        "int $0x80\n"
-        "mov %%eax, %0"
-        :"=g"(_v)
-        :
-        :"eax","ebx","ecx","edx","memory"
-    );
-    return _v;
-}
-
-static void yield()
-{
-    __asm__ (
-        "mov $2, %%eax\n"
-        "int $0x80\n"
-        :::"eax","ebx","ecx","edx","memory"
-    );
-
-}
-
-static void tsleep(int n)
-{
-    __asm__ (
-        "mov $3, %%eax\n"
-        "mov %0, %%ecx\n"
-        "int $0x80\n"
-        ::"g"(n)
-        :"eax","ebx","ecx","edx","memory"
-    );
-}
+#include "unistd.h"
 
 void user_do()
 {
@@ -39,9 +6,8 @@ void user_do()
     ret = fork();
     if(ret == 0)
     {
-        tsleep(10000);
-        while(1)
-            __asm__ volatile("nop;");
+        ret = fork();
+        while(1);
     }
     else
     {
@@ -49,5 +15,4 @@ void user_do()
     }
     while(1);
 }
-
 

@@ -52,3 +52,4 @@ void clear_8259_mask(uint8_t port)
     _outb(p, mask & (~(1 << port)));
 
 }
+

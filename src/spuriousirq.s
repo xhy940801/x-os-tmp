@@ -1,8 +1,8 @@
-global fucking_irq7
+global on_spurious_irq
 
-extern print_fuck_irq7
+extern print_spurious_irq
 
-fucking_irq7
+on_spurious_irq
     push eax
     push ecx
     push edx
@@ -13,7 +13,7 @@ fucking_irq7
     mov es, eax
     mov fs, eax
     mov gs, eax
-    call print_fuck_irq7
+    call print_spurious_irq
     mov eax, 0x2b
     mov ds, eax
     mov es, eax

@@ -96,6 +96,7 @@ void init_schedule_module()
 
 void schedule()
 {
+    lock_task();
     kassert(cur_process->nice < SCHED_LEVEL_SIZE);
 
     --cur_process->rest_time;
@@ -138,7 +139,10 @@ void schedule()
 
     //printk("from pid [%d] to pid [%d]\n", cur_process->pid, new_process->pid);
     if(new_process == cur_process)
+    {
+        unlock_task();
         return;
+    }
 
     struct process_info_t* old_process = cur_process;
     cur_process = new_process;
@@ -147,7 +151,9 @@ void schedule()
     scheduleto(
         &(new_process->cpu_state),
         &(old_process->cpu_state)
-    );//这后面加任何东西都可能出错
+    );
+    unlock_task();
+    return;
 }
 
 void in_sched_queue(struct process_info_t* proc)
@@ -162,15 +168,19 @@ void in_sched_queue(struct process_info_t* proc)
         proc->rest_time = flush_rest_time(proc);
     }
     proc->state = PROCESS_RUNNING;
+    lock_task();
     circular_list_insert(proc->sched_queue->levels[proc->nice].head.pre, &(proc->sched_node));
     ++proc->sched_queue->count;
+    unlock_task();
 }
 
 void out_sched_queue(struct process_info_t* proc)
 {
     kassert(proc->state == PROCESS_RUNNING);
+    lock_task();
     circular_list_remove(&(proc->sched_node));
     --proc->sched_queue->count;
+    unlock_task();
 }
 
 int pid_alloc()
@@ -181,8 +191,12 @@ int pid_alloc()
 
 int sys_fork()
 {
+    printk("forking\n");
     union process_sys_page_t* new_process = (union process_sys_page_t*) get_pages(1, 1, MEM_FLAGS_P | MEM_FLAGS_K);
     int ret = 3;
+
+    lock_task();
+
     __asm__ volatile(
         "push %3\n"
         "push %2\n"
@@ -194,6 +208,9 @@ int sys_fork()
         :"g"(&cur_process->cpu_state),"g"(new_process),"g"(parentof(cur_process, union process_sys_page_t, process_info)->stack)
         :"memory","eax","edi","esi"
     );
+
+    unlock_task();
+
     if(ret == 0)
         return 0;
     kassert(ret == 1);
@@ -203,13 +220,9 @@ int sys_fork()
     new_process->process_info.pid = pid_alloc();
     new_process->process_info.parent = cur_process;
     new_process->process_info.brother = cur_process->son;
-    cur_process->son = &new_process->process_info;
     new_process->process_info.son = NULL;
     
     new_process->process_info.rest_time = cur_process->rest_time - (cur_process->rest_time >> 1);
-    cur_process->rest_time >>= 1;
-    if(cur_process->rest_time == 0)
-        cur_process->rest_time = 1;
 
     if(mem_fork(&new_process->process_info, cur_process) < 0)
     {
@@ -222,14 +235,25 @@ int sys_fork()
         return -1;
     }
 
+    lock_task();
+    cur_process->rest_time >>= 1;
+    if(cur_process->rest_time == 0)
+        cur_process->rest_time = 1;
+
+    cur_process->son = &new_process->process_info;
     in_sched_queue(&new_process->process_info);
+    unlock_task();
     schedule();
     return new_process->process_info.pid;
 }
 
 void do_timer()
 {
+    //static size_t nc = 0;
     const size_t PROC_LEN = 32;
+    //if(nc < 8)
+        //printk("timer [%u]\n", ++nc);
+    _outb(0x20, 0x20);
     ++jiffies;
     struct process_info_t* procs[PROC_LEN];
     while(1)
@@ -240,7 +264,6 @@ void do_timer()
         if(len < PROC_LEN)
             break;
     }
-    _outb(0x20, 0x20);
     schedule();
 }
 
@@ -250,9 +273,8 @@ void init_auto_schedule_module()
 {
     setup_intr_desc(0x20, on_timer_interrupt, 0);
 
-    const size_t hz = 1000;
     const size_t thz = 1193180;
-    const size_t od = thz / hz;
+    const size_t od = thz / TIMER_HZ;
     _outb(0x43, 0x36);
     _outb(0x40, od & 0xff);
     _outb(0x40, (od >> 8) & 0xff);

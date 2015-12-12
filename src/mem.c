@@ -223,6 +223,7 @@ uint32_t get_free_mem_size()
 
 void* get_pages(size_t n, uint16_t share, uint16_t flags)
 {
+    lock_task();
     void* p = get_address_area(n);
     size_t pcount = 1 << n;
     uint32_t cp = (uint32_t) p;
@@ -234,11 +235,13 @@ void* get_pages(size_t n, uint16_t share, uint16_t flags)
         cp += 4096;
     }
     _memset(p, 0, pcount * 4096);
+    unlock_task();
     return p;
 }
 
 void free_pages(void* p, size_t n)
 {
+    lock_task();
     size_t pcount = 1 << n;
     uint32_t cp = (uint32_t) p;
     for(size_t i = 0; i < pcount; ++i)
@@ -250,10 +253,12 @@ void free_pages(void* p, size_t n)
     }
     free_address_area(p, n);
     flush_page_table();
+    unlock_task();
 }
 
 void* get_one_page(uint16_t share, uint16_t flags, uint32_t* physical_addr)
 {
+    lock_task();
     void* p = get_address_area(0);
     uint32_t cp = (uint32_t) p;
     struct mem_desc_t* desc = getonefreepage(share, flags);
@@ -261,6 +266,7 @@ void* get_one_page(uint16_t share, uint16_t flags, uint32_t* physical_addr)
     mapping_page(cp, *physical_addr, 7);
     _memset(p, 0, 4096);
     desc->point = p;
+    unlock_task();
     return p;
 }
 
@@ -282,6 +288,9 @@ void process_cow(unsigned e_code)
     //printk("cow! cr2 [%u]\n", cr2);
     kassert(cur_process->catalog_table_v[cr2 >> 22] & 0x01);
     uint32_t* page_table;
+
+    lock_task();
+
     struct mem_desc_t* desc = mem_descs + (cur_process->catalog_table_v[cr2 >> 22] >> 12);
     if((cur_process->catalog_table_v[cr2 >> 22] & 0x02) == 0)
     {
@@ -322,9 +331,13 @@ void process_cow(unsigned e_code)
     }
     else
         page_table = (uint32_t*) desc->point;
-    
+
+    unlock_task();
+
     kassert((page_table[(cr2 >> 12) & 0x3ff] & 0x02) == 0);
-    
+
+    lock_task();
+
     desc = mem_descs + (page_table[(cr2 >> 12) & 0x3ff] >> 12);
 
     kassert(desc->flags & MEM_FLAGS_S);
@@ -351,6 +364,7 @@ void process_cow(unsigned e_code)
         desc->flags &= ~MEM_FLAGS_S;
     }
     flush_page_table();
+    unlock_task();
 }
 
 void process_lack_page(unsigned e_code)
@@ -372,9 +386,14 @@ void process_lack_page(unsigned e_code)
         cur_process->catalog_table_v[cr2 >> 22] = physical_addr | 0x07;
     }
     else
-        page_table = (uint32_t*) (cur_process->catalog_table_v[cr2 >> 22] & 0xfffff000);
+    {
+        size_t offset = (cur_process->catalog_table_v[cr2 >> 22] >> 12);
+        page_table = (uint32_t*) mem_descs[offset].point;
+    }
+    lock_task();
     struct mem_desc_t* desc = getonefreepage(1, MEM_FLAGS_P);
     uint32_t physical_addr = (desc - mem_descs) * 4096;
+    unlock_task();
     page_table[(cr2 >> 12) & 0x3ff] = physical_addr | 0x07;
     int ret = load_program((void*) (cr2 & 0xfffff000), cur_process);
     kassert(ret == 0);
@@ -387,6 +406,7 @@ int mem_fork(struct process_info_t* dst, struct process_info_t* src)
     _memcpy(dst->catalog_table_v + 768, src->catalog_table_v + 768, 256 * sizeof(uint32_t));
     for(size_t i = 0; i < 768; ++i)
     {
+        lock_task();
         src->catalog_table_v[i] &= ~((uint32_t) 2);
         dst->catalog_table_v[i] = src->catalog_table_v[i];
         if(src->catalog_table_v[i] & 1)
@@ -395,6 +415,7 @@ int mem_fork(struct process_info_t* dst, struct process_info_t* src)
             ++desc->share;
             desc->flags |= MEM_FLAGS_S;
         }
+        unlock_task();
     }
     return 0;
 }

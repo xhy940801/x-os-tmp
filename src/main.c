@@ -54,15 +54,7 @@ void test_slab()
 
 void user_do();
 
-void fucking_irq7();
-
-void print_fuck_irq7()
-{
-    static int c = 0;
-    ++c;
-    if(c % 10 == 0)
-        printk("fucking irq7 count [%d]\n", c);
-}
+void on_spurious_irq();
 
 int main1()
 {
@@ -90,9 +82,9 @@ int main1()
 
     init_syscall_module();
 
-    init_auto_schedule_module();
+    //init_auto_schedule_module();
     //Incomprehensibly occur IRQ7!!! Ignore it!
-    setup_intr_desc(0x27, fucking_irq7, 0);
+    setup_intr_desc(0x27, on_spurious_irq, 0);
     iret_to_user_level(user_do);
     panic("could not run here!");
     return 0;
