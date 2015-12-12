@@ -28,8 +28,8 @@ static int tty0_write(struct vfs_inode_desc_t* _inode, const char* buf, size_t l
         char c = buf[i];
         if((i & 0x1f) == 0x1f)
         {
-            _sti();
-            _cli();
+            lock_task();
+            unlock_task();
         }
         if(inode->state == TTY0_STATE_NORMAL)
         {
