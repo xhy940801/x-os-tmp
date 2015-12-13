@@ -12,10 +12,9 @@ void putstr(const char* str)
 
 void user_do()
 {
-    while(1);
     char str1[] = "hehe\n";
-    char str2[] = "sub\n";
-    char str3[] = "main\n";
+    char str2[] = "subAAAAAA\n";
+    char str3[] = "mai22333333333333333333333\n";
     volatile int ret;
     putstr(str1);
     ret = fork();
@@ -23,6 +22,7 @@ void user_do()
     {
         ret = fork();
         putstr(str2);
+        __asm__ volatile("mov $255, %%eax":::"eax");
         while(1);
     }
     else

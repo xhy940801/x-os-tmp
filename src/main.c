@@ -90,7 +90,6 @@ int main1()
     init_auto_schedule_module();
     //Incomprehensibly occur IRQ7!!! Ignore it!
     setup_intr_desc(0x27, on_spurious_irq, 0);
-    setup_intr_desc(0x12, hehe, 0);
     v_unlock_task();
     iret_to_user_level(user_do);
     panic("could not run here!");

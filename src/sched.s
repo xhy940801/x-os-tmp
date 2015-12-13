@@ -4,6 +4,8 @@ global schedulecpy
 global on_timer_interrupt
 
 extern do_timer
+extern get_locker_count
+extern set_locker_count
 
 scheduleto:
     mov eax, [esp + 8]
@@ -54,20 +56,35 @@ on_timer_interrupt:
     push fs
     push gs
 
+    sub esp, 4
     push eax
     push ecx
     push edx
     cld
-    cli
+    
     mov eax, 0x10
     mov ds, eax
     mov es, eax
     mov fs, eax
     mov gs, eax
+
+    call get_locker_count
+    mov [esp + 12], eax
+    push 0
+    call set_locker_count
+    add esp, 4
+
     call do_timer
+
+    mov eax, [esp + 12]
+    push eax
+    call set_locker_count
+    add esp, 4
+
     pop edx
     pop ecx
     pop eax
+    add esp, 4
 
     pop gs
     pop fs

@@ -198,6 +198,7 @@ int sys_fork()
     int ret = 3;
 
     lock_task();
+    kassert(cur_process->task_locker.lock_count == 1);
 
     __asm__ volatile(
         "push %3\n"
@@ -211,6 +212,7 @@ int sys_fork()
         :"memory","eax","edi","esi"
     );
 
+    kassert(cur_process->task_locker.lock_count == 1);
     unlock_task();
 
     if(ret == 0)
@@ -242,6 +244,7 @@ int sys_fork()
     if(cur_process->rest_time == 0)
         cur_process->rest_time = 1;
 
+    //printk("forking2\n");
     cur_process->son = &new_process->process_info;
     in_sched_queue(&new_process->process_info);
     unlock_task();
@@ -252,10 +255,10 @@ int sys_fork()
 void do_timer()
 {
     v_lock_task();
-    printk("timer [%u]\n", cur_process->task_locker.lock_count);
+    //printk("timer [%u]\n", cur_process->task_locker.lock_count);
     //static size_t nc = 0;
     const size_t PROC_LEN = 32;
-    //if(nc < 8)
+    //if(nc < 10000)
         //printk("timer [%u]\n", ++nc);
     _outb(0x20, 0x20);
     ++jiffies;
@@ -268,7 +271,7 @@ void do_timer()
         if(len < PROC_LEN)
             break;
     }
-    printk("timer-end\n");
+    //printk("timer-end\n");
     schedule();
     v_unlock_task();
 }

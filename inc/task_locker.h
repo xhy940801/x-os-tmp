@@ -14,3 +14,7 @@ void unlock_task();
 void v_lock_task();
 
 void v_unlock_task();
+
+size_t get_locker_count();
+
+void set_locker_count(size_t count);

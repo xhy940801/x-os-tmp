@@ -376,15 +376,17 @@ void process_lack_page(unsigned e_code)
     //printk("cr2 [%u]\n", cr2);
     kassert(cr2 < KMEM_START);
     uint32_t* page_table;
-    printk("catalog [%u]\n", cur_process->catalog_table_v);
+    //printk("catalog [%u]\n", cur_process->catalog_table_v);
     if((cur_process->catalog_table_v[cr2 >> 22] & 0x01) == 0)
     {
-        printk("?\n");
-        kassert((cur_process->catalog_table_v[cr2 >> 22] & 0x67) == 0x06);
+        //kassert((cur_process->catalog_table_v[cr2 >> 22] & 0x67) == 0x06);
+        if((cur_process->catalog_table_v[cr2 >> 22] & 0x67) != 0x06)
+        {
+            printk("%u %u", e_code, cur_process->pid);
+            panic("");
+        }
         uint32_t physical_addr;
-        printk("??[%u]\n", cur_process->task_locker.lock_count);
         page_table = (uint32_t*) get_one_page(1, MEM_FLAGS_P | MEM_FLAGS_K | MEM_FLAGS_T, &physical_addr);
-        printk("???\n");
         _memset(page_table, 0x06, 4096);
         cur_process->catalog_table_v[cr2 >> 22] = physical_addr | 0x07;
     }
@@ -393,13 +395,13 @@ void process_lack_page(unsigned e_code)
         size_t offset = (cur_process->catalog_table_v[cr2 >> 22] >> 12);
         page_table = (uint32_t*) mem_descs[offset].point;
     }
-    printk("????\n");
     lock_task();
+    kassert(cur_process->task_locker.lock_count == 1);
     struct mem_desc_t* desc = getonefreepage(1, MEM_FLAGS_P);
     uint32_t physical_addr = (desc - mem_descs) * 4096;
-    unlock_task();
     page_table[(cr2 >> 12) & 0x3ff] = physical_addr | 0x07;
     int ret = load_program((void*) (cr2 & 0xfffff000), cur_process);
+    unlock_task();
     kassert(ret == 0);
 }
 

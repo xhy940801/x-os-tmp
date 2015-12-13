@@ -40,7 +40,10 @@ int t_sys_call(int num, int arg0, int arg1, int arg2)
 {
     if(num > SYSCALL_SIZE || syscalls[num].callback == NULL)
         return -1;
-    return syscalls[num].callback(arg0, arg1, arg2);
+    int ret = syscalls[num].callback(arg0, arg1, arg2);
+    // if(num == 1)
+    //     printk("pic [%d] call [%d] errno [%d] ret [%d]\n", cur_process->pid, num, cur_process->last_errno, ret);
+    return ret;
 }
 
 int syscall_register(int num, void* callback)

@@ -28,3 +28,13 @@ void v_unlock_task()
 {
     --cur_process->task_locker.lock_count;
 }
+
+size_t get_locker_count()
+{
+    return cur_process->task_locker.lock_count;
+}
+
+void set_locker_count(size_t count)
+{
+    cur_process->task_locker.lock_count = count;
+}
