@@ -188,7 +188,10 @@ void out_sched_queue(struct process_info_t* proc)
 int pid_alloc()
 {
     static int _last_pid = 100;
-    return ++_last_pid;
+    lock_task();
+    int pid = ++_last_pid;
+    unlock_task();
+    return pid;
 }
 
 int sys_fork()
@@ -243,6 +246,8 @@ int sys_fork()
     cur_process->rest_time >>= 1;
     if(cur_process->rest_time == 0)
         cur_process->rest_time = 1;
+
+    pcinfo_rb_tree_insert(&pc_rb_tree_head, &new_process->process_info.rb_node);
 
     //printk("forking2\n");
     cur_process->son = &new_process->process_info;
