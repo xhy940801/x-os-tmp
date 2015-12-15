@@ -11,6 +11,8 @@
 #include "interrupt.h"
 #include "asm.h"
 #include "wait.h"
+#include "hd_driver.h"
+#include "block_buffer.h"
 
 void print_mem_status()
 {
@@ -67,7 +69,6 @@ int main1()
     init_vfs_module();
     init_tty0_module();
     turn_to_process1();
-    init_paging_module();
     init_schedule_module();
     init_wait_module();
 
@@ -78,18 +79,22 @@ int main1()
     printk("memsize: %u B = %u MB\n", memsize, memsize / (1024 * 1024));
     init_mem_module();
     init_buddy_module();
-    uint32_t free_memsize = get_free_mem_size();
-    printk("free memsize: %u B = %u MB\n", free_memsize, free_memsize / (1024 * 1024));
     init_slab_module();
     //test_pages();
     //test_slab();
     //printk("free memsize: %u B = %u MB\n", free_memsize, free_memsize / (1024 * 1024));
 
     init_syscall_module();
+    init_block_buffer_module();
+    init_hd_driver_module();
+    
+    uint32_t free_memsize = get_free_mem_size();
+    printk("free memsize: %u B = %u MB\n", free_memsize, free_memsize / (1024 * 1024));
 
     init_auto_schedule_module();
     //Incomprehensibly occur IRQ7!!! Ignore it!
     setup_intr_desc(0x27, on_spurious_irq, 0);
+    init_paging_module();
     v_unlock_task();
     iret_to_user_level(user_do);
     panic("could not run here!");

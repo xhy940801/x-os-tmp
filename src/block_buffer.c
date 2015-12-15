@@ -116,7 +116,7 @@ struct block_buffer_desc_t* flush_block_buffer(struct block_buffer_desc_t* start
     return end;
 }
 
-void block_buffer_module_init()
+void init_block_buffer_module()
 {
     _memset(&blank_buffer, 0, sizeof(blank_buffer));
     rb_tree_init(&blk_buffer_manager.rb_tree_head, &blank_buffer.rb_tree_node);

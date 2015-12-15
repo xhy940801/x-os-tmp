@@ -197,7 +197,7 @@ void* kgetpersistedmem(size_t size)
 
 void* kgetpersistedpage(size_t size)
 {
-    while(size--)
+    for(size_t i = 0; i < size; ++i)
     {
         persisted_pagemem_desc.cur_mem_pos -= 4096;
         struct mem_desc_t* desc = getonefreepage_unblocking(1, MEM_FLAGS_P | MEM_FLAGS_K | MEM_FLAGS_L);

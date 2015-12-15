@@ -51,6 +51,6 @@ struct block_buffer_manager_info_t
     struct list_node_t dirty_list_head;
 };
 
-void block_buffer_module_init();
+void init_block_buffer_module();
 struct block_buffer_desc_t* get_block_buffer(uint16_t main_driver, uint16_t sub_driver, size_t block_no, int timeout);
 void release_block_buffer(struct block_buffer_desc_t* blk);
