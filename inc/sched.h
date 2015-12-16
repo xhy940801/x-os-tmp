@@ -113,8 +113,9 @@ struct sched_queue_desc_t
 
 enum
 {
-    PROCESS_RUNNING = 1,
-    PROCESS_WAITING = 2
+    PROCESS_RUNNING         = 1,
+    PROCESS_INTERRUPTABLE   = 2,
+    PROCESS_UNINTERRUPTABLE = 3
 };
 
 #define PID_SIZE 65536

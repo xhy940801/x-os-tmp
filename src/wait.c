@@ -21,19 +21,19 @@ void init_wait_module()
 
 void kwait(struct process_info_t* proc)
 {
-    proc->state = PROCESS_WAITING;
+    proc->state = PROCESS_INTERRUPTABLE;
     circular_list_insert(&wait_list_head, &(proc->sleep_info.node));
 }
 
 void kwakeup(struct process_info_t* proc)
 {
-    kassert(proc->state == PROCESS_WAITING);
+    kassert(proc->state == PROCESS_INTERRUPTABLE);
     circular_list_remove(&(proc->sleep_info.node));
 }
 
 void ksleep(struct process_info_t* proc, uint32_t tick)
 {
-    proc->state = PROCESS_WAITING;
+    proc->state = PROCESS_INTERRUPTABLE;
     proc->sleep_info.wakeup_jiffies = tick + jiffies;
     circular_list_insert(&(time_wheel[WHEEL_HASH(proc->sleep_info.wakeup_jiffies)].head), &(proc->sleep_info.node));
 }
@@ -49,7 +49,7 @@ uint32_t ready_processes(struct process_info_t* procs[], uint32_t max)
         struct process_info_t* proc = parentof(node, struct process_info_t, sleep_info.node);
         if(proc->sleep_info.wakeup_jiffies > jiffies)
             continue;
-        kassert(proc->state == PROCESS_WAITING);
+        kassert(proc->state == PROCESS_INTERRUPTABLE);
         circular_list_remove(&(proc->sleep_info.node));
         procs[i] = proc;
         ++i;
