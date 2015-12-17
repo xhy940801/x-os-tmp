@@ -3,6 +3,8 @@
 #include "stdint.h"
 #include "stddef.h"
 
+#include "errno.h"
+
 #include "sched.h"
 #include "panic.h"
 
@@ -17,6 +19,12 @@ void init_wait_module()
     for(size_t i = 0; i < WHEEL_SIZE; ++i)
         circular_list_init(&(time_wheel[i].head));
     circular_list_init(&wait_list_head);
+}
+
+void kuninterruptwait(struct process_info_t* proc)
+{
+    proc->state = PROCESS_UNINTERRUPTABLE;
+    circular_list_insert(&wait_list_head, &(proc->sleep_info.node));
 }
 
 void kwait(struct process_info_t* proc)
@@ -49,10 +57,19 @@ uint32_t ready_processes(struct process_info_t* procs[], uint32_t max)
         struct process_info_t* proc = parentof(node, struct process_info_t, sleep_info.node);
         if(proc->sleep_info.wakeup_jiffies > jiffies)
             continue;
-        kassert(proc->state == PROCESS_INTERRUPTABLE);
-        circular_list_remove(&(proc->sleep_info.node));
-        procs[i] = proc;
-        ++i;
+        kassert(proc->state == PROCESS_INTERRUPTABLE || proc->state == PROCESS_UNINTERRUPTABLE);
+        proc->sub_errno = ETIMEDOUT;
+        if(proc->state == PROCESS_INTERRUPTABLE)
+        {
+            circular_list_remove(&(proc->sleep_info.node));
+            procs[i] = proc;
+            ++i;
+        }
+        else
+        {
+            circular_list_remove(&(proc->sleep_info.node));
+            circular_list_insert(&wait_list_head, &proc->sleep_info.node);
+        }
     }
     return i;
 }

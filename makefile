@@ -12,7 +12,12 @@ bin/c.img:bin/bootsect.sb bin/setup.sb bin/system.cb
 bin/system.cb:obj/head.so $(patsubst src/%.c,obj/%.o,$(CSOURCE)) $(patsubst src/%.s,obj/%.so,$(ASMSOURCE))
 	$(LD) -O2 --oformat=binary -m elf_i386 -M -x -e startup_32 --section-start .text=0xc0100000 -o $@ $^ |\
 	tee os.symbols.origin |\
-	grep -E "^\s+0x[0-9a-f]+\s+[a-zA-Z_]\S+$$" | sed -r "s/^[\t ]+//" | sed -r "s/[\t ]+/ /" > os.symbols
+	grep -E "(^\s+0x[0-9a-f]+\s+[a-zA-Z_]\S+$$)|(^\s*\.text\s+0x[0-9a-f]+\s+0x[0-9a-f]+\s+[a-zA-Z_]\S+$$)" |\
+	sed -r "s/^\s*\.text\s+(0x[0-9a-f]+)\s+0x[0-9a-f]+\s+([a-zA-Z_]\S+)$$/\1 \2/" |\
+	sed -r "s/obj\/([a-zA-Z_]\S+)\.so/_______________\1.s/" |\
+	sed -r "s/obj\/([a-zA-Z_]\S+)\.o/_______________\1.c/" |\
+	sed -r "s/^[\t ]+//" | sed -r "s/[\t ]+/ /" |\
+	sed -r "N;s/(0x[0-9a-f]+)\s+([a-zA-Z_]\S+)\s*\n\1\s+([a-zA-Z_]\S+)/\1 \2[\3]/;" > os.symbols
 
 #$(CC) $(CFLAGS) -S -o $@ $^
 

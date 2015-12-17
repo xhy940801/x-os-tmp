@@ -53,6 +53,7 @@ struct waitlist_node_desc_t
     {
         int waiting;
         size_t demand;
+        void* data;
     };
 };
 

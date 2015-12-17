@@ -6,6 +6,55 @@
 #include "panic.h"
 #include "printk.h"
 #include "string.h"
+#include "block_driver.h"
+#include "block_buffer.h"
+#include "circular_list.h"
+#include "task_locker.h"
+#include "sched.h"
+#include "errno.h"
+
+#define HD_OP_CAPACITY 32
+
+enum hd_operation_type
+{
+    HD_OPERATION_READ,
+    HD_OPERATION_WRITE
+};
+
+enum hd_elevator_state
+{
+    HD_ELEVATOR_UP,
+    HD_ELEVATOR_DOWN
+};
+
+struct hd_operation_desc_t
+{
+    struct list_node_t node;
+    struct block_buffer_desc_t* start;
+    size_t count;
+    struct process_info_t* proc;
+    enum hd_operation_type op_type;
+};
+
+struct hd_operation_append_desc_t
+{
+    struct block_buffer_desc_t* start;
+    size_t count;
+    int result;
+    enum hd_operation_type op_type;
+};
+
+struct hd_elevator_desc_t
+{
+    struct hd_operation_desc_t hd_opertations[HD_OP_CAPACITY];
+    enum hd_elevator_state state;
+    struct list_node_t up_head;
+    struct list_node_t down_head;
+    struct list_node_t free_head;
+    struct list_node_t read_wait_list_head;
+    struct list_node_t write_wait_list_head;
+    size_t write_priority;
+};
 
 struct hd_subdriver_desc_t
 {
@@ -21,6 +70,7 @@ struct hd_info_t
     int slavebit;
     int flags;
     size_t len;
+    struct hd_elevator_desc_t elevator;
 };
 
 struct lba48_partition_table_desc_t
@@ -36,6 +86,8 @@ struct lba48_partition_table_desc_t
 };
 
 static struct hd_subdriver_desc_t hd_subdrivers[4];
+static struct hd_info_t hd_infos[1];
+static uint8_t driver_last_selectors[1];
 
 #define PORT_DATA           0x0000
 #define PORT_SELECTORCOUNT  0x0002
@@ -208,19 +260,250 @@ int reset_hd_partition_table(struct hd_info_t* info)
     return hd_pio_writeoneblock(info, 0, buf);
 }
 
+int hd_irq_start_read(struct block_buffer_desc_t* start, size_t count)
+{
+    return 0;
+}
+
+int hd_irq_start_write(struct block_buffer_desc_t* start, size_t count)
+{
+    return 0;
+}
+
+int hd_blocks_op(struct hd_operation_append_desc_t* hd_op_append, int timeout)
+{
+    struct block_buffer_desc_t* start = hd_op_append->start;
+    size_t count = hd_op_append->count;
+    kassert(count < 32);
+    kassert(hd_op_append->op_type == HD_OPERATION_WRITE || hd_op_append->op_type == HD_OPERATION_READ);
+    count <<= 2;
+    
+    struct hd_info_t* hd_info = &hd_infos[start->sub_driver >> 2];
+    lock_task();
+    if(circular_list_is_empty(&hd_info->elevator.free_head))
+    {
+        if(timeout < 0)
+        {
+            cur_process->last_errno = ETIMEDOUT;
+            unlock_task();
+            return -1;
+        }
+        circular_list_insert(
+            hd_info->elevator.read_wait_list_head.pre,
+            &cur_process->waitlist_node.node
+        );
+        out_sched_queue(cur_process);
+        if(timeout == 0)
+            kwait(cur_process);
+        else
+            ksleep(cur_process, timeout);
+    }
+    else
+    {
+        struct hd_operation_desc_t* free_node = parentof(hd_info->elevator.free_head.next, struct hd_operation_desc_t, node);
+        circular_list_remove(&free_node->node);
+        free_node->start = start;
+        free_node->count = count;
+        free_node->proc = cur_process;
+        if(hd_info->elevator.state == HD_ELEVATOR_UP)
+        {
+            if(circular_list_is_empty(&hd_info->elevator.up_head))
+            {
+                kassert(circular_list_is_empty(&hd_info->elevator.down_head));
+                int res;
+                if(hd_op_append->op_type == HD_OPERATION_WRITE)
+                    res = hd_irq_start_write(start, count);
+                else
+                    res = hd_irq_start_read(start, count);
+                if(res < 0)
+                {
+                    unlock_task();
+                    return res;
+                }
+                circular_list_insert(&hd_info->elevator.up_head, &free_node->node);
+                out_sched_queue(cur_process);
+                kuninterruptwait(cur_process);
+            }
+            else
+            {
+                if(timeout < 0)
+                {
+                    cur_process->last_errno = ETIMEDOUT;
+                    unlock_task();
+                    return -1;
+                }
+                if(start->block_no >
+                    parentof(
+                        hd_info->elevator.up_head.next,
+                        struct hd_operation_desc_t,
+                        node
+                    )->start->block_no
+                )
+                {
+                    struct list_node_t* c_node = hd_info->elevator.up_head.next;
+                    while(
+                        c_node->next != &hd_info->elevator.up_head &&
+                        start->block_no > parentof(
+                            c_node->next,
+                            struct hd_operation_desc_t,
+                            node
+                        )->start->block_no
+                    )
+                        c_node = c_node->next;
+                    circular_list_insert(c_node->pre, &free_node->node);
+                }
+                else
+                {
+                    struct list_node_t* c_node = hd_info->elevator.down_head.next;
+                    while(
+                        c_node != &hd_info->elevator.down_head &&
+                        start->block_no < parentof(
+                            c_node,
+                            struct hd_operation_desc_t,
+                            node
+                        )->start->block_no
+                    )
+                        c_node = c_node->next;
+                    circular_list_insert(c_node->pre, &free_node->node);
+                }
+                out_sched_queue(cur_process);
+                if(timeout == 0)
+                    kwait(cur_process);
+                else
+                    ksleep(cur_process, timeout);
+            }
+        }
+        else
+        {
+            if(circular_list_is_empty(&hd_info->elevator.down_head))
+            {
+                kassert(circular_list_is_empty(&hd_info->elevator.up_head));
+                int res;
+                if(hd_op_append->op_type == HD_OPERATION_WRITE)
+                    res = hd_irq_start_write(start, count);
+                else
+                    res = hd_irq_start_read(start, count);
+                if(res < 0)
+                {
+                    unlock_task();
+                    return res;
+                }
+                circular_list_insert(&hd_info->elevator.down_head, &free_node->node);
+                out_sched_queue(cur_process);
+                kuninterruptwait(cur_process);
+            }
+            else
+            {
+                if(timeout < 0)
+                {
+                    cur_process->last_errno = ETIMEDOUT;
+                    unlock_task();
+                    return -1;
+                }
+                if(start->block_no <
+                    parentof(
+                        hd_info->elevator.down_head.next,
+                        struct hd_operation_desc_t,
+                        node
+                    )->start->block_no
+                )
+                {
+                    struct list_node_t* c_node = hd_info->elevator.down_head.next;
+                    while(
+                        c_node->next != &hd_info->elevator.down_head &&
+                        start->block_no < parentof(
+                            c_node->next,
+                            struct hd_operation_desc_t,
+                            node
+                        )->start->block_no
+                    )
+                        c_node = c_node->next;
+                    circular_list_insert(c_node->pre, &free_node->node);
+                }
+                else
+                {
+                    struct list_node_t* c_node = hd_info->elevator.up_head.next;
+                    while(
+                        c_node != &hd_info->elevator.up_head &&
+                        start->block_no > parentof(
+                            c_node,
+                            struct hd_operation_desc_t,
+                            node
+                        )->start->block_no
+                    )
+                        c_node = c_node->next;
+                    circular_list_insert(c_node->pre, &free_node->node);
+                }
+                out_sched_queue(cur_process);
+                if(timeout == 0)
+                    kwait(cur_process);
+                else
+                    ksleep(cur_process, timeout);
+            }
+        }
+    }
+    schedule();
+    unlock_task();
+    kassert(hd_op_append->result == -2 || hd_op_append->result == -1 || hd_op_append->result == 0);
+    if(hd_op_append->result == -2)
+    {
+        cur_process->last_errno = ETIMEDOUT;
+        return -1;
+    }
+    return hd_op_append->result;
+}
+
+int hd_read_blocks(struct block_buffer_desc_t* start, size_t count, int timeout)
+{
+    struct hd_operation_append_desc_t hd_op_append;
+    hd_op_append.start = start;
+    hd_op_append.count = count;
+    hd_op_append.result = -2;
+    hd_op_append.op_type = HD_OPERATION_READ;
+    cur_process->waitlist_node.data = &hd_op_append;
+    return hd_blocks_op(&hd_op_append, timeout);
+}
+
+int hd_write_blocks(struct block_buffer_desc_t* start, size_t count, int timeout)
+{
+    struct hd_operation_append_desc_t hd_op_append;
+    hd_op_append.start = start;
+    hd_op_append.count = count;
+    hd_op_append.result = -2;
+    hd_op_append.op_type = HD_OPERATION_WRITE;
+    cur_process->waitlist_node.data = &hd_op_append;
+    return hd_blocks_op(&hd_op_append, timeout);
+}
+
+void init_hd_info(struct hd_info_t* hd_info, int baseport, int slavebit)
+{
+    _memset(hd_info, 0, sizeof(*hd_info));
+    hd_info->baseport = baseport;
+    hd_info->slavebit = slavebit;
+    hd_info->elevator.state = HD_ELEVATOR_UP;
+    circular_list_init(&hd_info->elevator.up_head);
+    circular_list_init(&hd_info->elevator.down_head);
+    circular_list_init(&hd_info->elevator.free_head);
+    circular_list_init(&hd_info->elevator.read_wait_list_head);
+    circular_list_init(&hd_info->elevator.write_wait_list_head);
+    for(size_t i = 0; i < HD_OP_CAPACITY; ++i)
+        circular_list_insert(
+            &hd_info->elevator.free_head,
+            &hd_info->elevator.hd_opertations[i].node
+        );
+}
+
 void init_hd_driver_module()
 {
     _memset(hd_subdrivers, 0, sizeof(hd_subdrivers));
-    struct hd_info_t hd_info;
-    hd_info.baseport = 0x01f0;
-    hd_info.slavebit = 0;
-    int ret = load_hd_params(&hd_info);
+    init_hd_info(&hd_infos[0], 0x01f0, 0);
+    int ret = load_hd_params(&hd_infos[0]);
     if(ret < 0)
         panic("load_hd_params fail\n");
-    printk("hd0 lba len: %u blk = %u Byte = %u MB\n", hd_info.len, hd_info.len * 512, hd_info.len * 512 / 1024 / 1024);
-    ret = reset_hd_partition_table(&hd_info);
+    printk("hd0 lba len: %u blk = %u Byte = %u MB\n", hd_infos[0].len, hd_infos[0].len * 512, hd_infos[0].len * 512 / 1024 / 1024);
+    ret = reset_hd_partition_table(&hd_infos[0]);
     kassert(ret == 0);
-    int pc = load_hd_partition_table(&hd_info, hd_subdrivers);
+    int pc = load_hd_partition_table(&hd_infos[0], hd_subdrivers);
     if(pc < 0)
         panic("load partition fail\n");
     printk("has %d partition\n", pc);

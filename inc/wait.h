@@ -19,6 +19,7 @@ struct time_wheel_desc_t
 };
 
 void init_wait_module();
+void kuninterruptwait(struct process_info_t* proc);
 void kwait(struct process_info_t* proc);
 void kwakeup(struct process_info_t* proc);
 
