@@ -55,6 +55,9 @@ on_timer_interrupt:
     push es
     push fs
     push gs
+    push ebx
+    push esi
+    push edi
 
     sub esp, 4
     push eax
@@ -86,6 +89,9 @@ on_timer_interrupt:
     pop eax
     add esp, 4
 
+    pop edi
+    pop esi
+    pop ebx
     pop gs
     pop fs
     pop es
