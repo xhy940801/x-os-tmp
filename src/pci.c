@@ -4,16 +4,6 @@
 #include "string.h"
 #include "asm.h"
 
-static inline uint32_t pci_configuration_get_address(uint8_t bus, uint8_t slot, uint8_t func, uint8_t offset)
-{
-    kassert((offset & 0x03) == 0);
-    uint32_t lbus  = (uint32_t)bus;
-    uint32_t lslot = (uint32_t)slot;
-    uint32_t lfunc = (uint32_t)func;
-    return (uint32_t)((lbus << 16) | (lslot << 11) |
-            (lfunc << 8) | (offset) | ((uint32_t)0x80000000));
-}
-
 uint32_t pci_configuration_read_dword(uint8_t bus, uint8_t slot, uint8_t func, uint8_t offset)
 {
     uint32_t address = pci_configuration_get_address(bus, slot, func, offset);
@@ -21,7 +11,7 @@ uint32_t pci_configuration_read_dword(uint8_t bus, uint8_t slot, uint8_t func, u
     return _ind(0xcfc);
 }
 
-int enumerating_pci_bus(struct pci_info_t* infos, size_t count)
+/*int enumerating_pci_bus(struct pci_info_t* infos, size_t count)
 {
     _memset(infos, 0, sizeof(*infos) * count);
     int rs = 0;
@@ -52,4 +42,16 @@ int enumerating_pci_bus(struct pci_info_t* infos, size_t count)
             break;
     }
     return rs;
+}
+*/
+
+void load_pci_configuration_space(union pci_configuration_space_desc_t* space, uint32_t address_base)
+{
+    kassert((address_base & 0xff) == 0);
+    kassert(address_base & 0x80000000);
+    for(size_t i = 0; i < sizeof(*space) / sizeof(uint32_t); ++i)
+    {
+        _outd(PCI_CONFIG_ADDRESS, address_base | (i << 2));
+        space->datas[i] = _ind(PCI_CONFIG_DATA);
+    }
 }

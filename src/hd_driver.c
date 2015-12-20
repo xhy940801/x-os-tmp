@@ -12,6 +12,7 @@
 #include "task_locker.h"
 #include "sched.h"
 #include "errno.h"
+#include "pci.h"
 
 #define HD_OP_CAPACITY 32
 
@@ -493,6 +494,28 @@ void init_hd_info(struct hd_info_t* hd_info, int baseport, int slavebit)
         );
 }
 
+int enumerating_ata_controller(union pci_configuration_space_desc_t* pci_info)
+{
+    for(size_t bus = 0; bus < 256; ++bus)
+        for(size_t slot = 0; slot < 32; ++slot)
+            for(size_t function = 0; function < 8; ++function)
+            {
+                uint32_t address = pci_configuration_get_address(bus, slot, function, 0);
+                load_pci_configuration_space(pci_info, address);
+                if(pci_info->vendor_id != 0xffff && pci_info->class_code == 0x01 && pci_info->subclass == 0x01)
+                    return 0;
+            }
+    return -1;
+}
+
+void init_hd_pci_info()
+{
+    union pci_configuration_space_desc_t pci_info;
+    int ret = enumerating_ata_controller(&pci_info);
+    printk("ret [%d] addr [%u] <<>>\n", ret, pci_info.bar4);
+    panic("hahaha");
+}
+
 void init_hd_driver_module()
 {
     _memset(hd_subdrivers, 0, sizeof(hd_subdrivers));
@@ -510,4 +533,5 @@ void init_hd_driver_module()
     for(size_t i = 0; i < sizeof(hd_subdrivers) / sizeof(hd_subdrivers[0]); ++i)
         if(hd_subdrivers[i].baseport != 0)
             printk("partition %d: startlba [%u] len [%u]\n", i, hd_subdrivers[i].startlba, hd_subdrivers[i].len);
+    init_hd_pci_info();
 }

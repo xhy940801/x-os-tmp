@@ -7,7 +7,7 @@ union pci_configuration_space_desc_t
 {
     struct
     {
-        uint32_t data[64];
+        uint32_t datas[16];
     };
     struct
     {
@@ -36,4 +36,18 @@ struct pci_info_t
     uint16_t vendor_id, device_id;
 };
 
-int enumerating_pci_bus(struct pci_info_t* infos, size_t count);
+#define PCI_CONFIG_ADDRESS  0xcf8
+#define PCI_CONFIG_DATA     0xcfc
+
+//int enumerating_pci_bus(struct pci_info_t* infos, size_t count);
+
+void load_pci_configuration_space(union pci_configuration_space_desc_t* space, uint32_t address_base);
+
+inline uint32_t pci_configuration_get_address(uint8_t bus, uint8_t slot, uint8_t func, uint8_t offset)
+{
+    uint32_t lbus  = (uint32_t)bus;
+    uint32_t lslot = (uint32_t)slot;
+    uint32_t lfunc = (uint32_t)func;
+    return (uint32_t)((lbus << 16) | (lslot << 11) |
+            (lfunc << 8) | (offset) | ((uint32_t)0x80000000));
+}
