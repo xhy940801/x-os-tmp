@@ -227,3 +227,12 @@ void release_block_buffer(struct block_buffer_desc_t* blk)
             circular_list_insert(&blk_buffer_manager.sync_list_head, &blk->list_node);
     }
 }
+
+struct block_buffer_desc_t* block_buffer_get_next_node(struct block_buffer_desc_t* node)
+{
+    return parentof(
+        blkbuffer_rb_tree_next(&(blk_buffer_manager.rb_tree_head), &(node->rb_tree_node)),
+        struct block_buffer_desc_t,
+        rb_tree_node
+    );
+}

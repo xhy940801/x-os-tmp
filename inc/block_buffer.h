@@ -54,3 +54,4 @@ struct block_buffer_manager_info_t
 void init_block_buffer_module();
 struct block_buffer_desc_t* get_block_buffer(uint16_t main_driver, uint16_t sub_driver, size_t block_no, int timeout);
 void release_block_buffer(struct block_buffer_desc_t* blk);
+struct block_buffer_desc_t* block_buffer_get_next_node(struct block_buffer_desc_t* node);

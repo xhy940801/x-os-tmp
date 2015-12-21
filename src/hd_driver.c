@@ -78,6 +78,7 @@ struct bmr_info_t
 {
     int bmr_base_port;
     struct prdt_desc_t* prdt;
+    uint32_t prdt_physical_address;
 };
 
 struct hd_info_t
@@ -288,6 +289,29 @@ int hd_irq_start_read(struct hd_info_t* hd_info, struct block_buffer_desc_t* sta
 
 int hd_irq_start_write(struct hd_info_t* hd_info, struct block_buffer_desc_t* start, size_t count)
 {
+    struct block_buffer_desc_t* end = start;
+    for(size_t i = 0; i < count; ++i)
+    {
+        hd_info->bmr.prdt[i].physical_address = get_physical_addr((uint32_t) end->buffer);
+        hd_info->bmr.prdt[i].byte_count = 4096;
+        hd_info->bmr.prdt[i].eot = 0x0000;
+        end = block_buffer_get_next_node(end);
+    }
+    hd_info->bmr.prdt[count - 1].eot = 0x8000;
+
+    _outd(hd_info->bmr.bmr_base_port + PORT_BMI_M_PRDTADDR, hd_info->bmr.prdt_physical_address);
+    _outb(hd_info->bmr.bmr_base_port + PORT_BMI_M_COMMAND, 0x00);
+    _outb(hd_info->bmr.bmr_base_port + PORT_BMI_M_STATUS, 0x06);
+
+    uint32_t lba = 0x600;
+    _outb(hd_info->baseport + PORT_DRIVERSELECT, 0xe0 | hd_info->slavebit | ((lba >> 24) & 0x0f));
+    _outb(hd_info->baseport + PORT_SELECTORCOUNT, 4);
+    _outb(hd_info->baseport + PORT_LBALO, lba & 0xff);
+    _outb(hd_info->baseport + PORT_LBAMID, ((lba >> 8) & 0xff));
+    _outb(hd_info->baseport + PORT_LBAHI, ((lba >> 16) & 0xff));
+    _outb(hd_info->baseport + PORT_CMDSTATUS, 0xca);
+
+    _outb(hd_info->bmr.bmr_base_port + PORT_BMI_M_COMMAND, 0x01);
     return 0;
 }
 
@@ -536,6 +560,7 @@ void init_hd_pci_info(struct hd_info_t* hd_info)
     kassert(pci_info.bar4 & 0x01);
     hd_info->bmr.bmr_base_port = pci_info.bar4 & (0xfffffffc);
     hd_info->bmr.prdt = kgetpersistedpage(1);
+    hd_info->bmr.prdt_physical_address = get_physical_addr((uint32_t) hd_info->bmr.prdt);
 }
 
 void do_hd_irq()
