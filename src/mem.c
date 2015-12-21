@@ -20,8 +20,6 @@ static struct mem_desc_t* mem_descs = NULL;
 static struct mem_desc_t* free_mem_desc_head;
 static struct ksemaphore_desc_t mem_semaphore;
 
-#define KMEM_START 0xc0000000
-
 static struct
 {
     uint32_t end;
@@ -98,12 +96,6 @@ static inline void unmapping_page(uint32_t dst)
     kassert(dst % 4096 == 0);
     uint32_t* page_table = (uint32_t*) (KMEM_START);
     page_table[(dst - KMEM_START) >> 12] = 0;
-}
-
-static inline uint32_t get_physical_addr(uint32_t dst)
-{
-    uint32_t* page_table = (uint32_t*) (KMEM_START);
-    return page_table[(dst - KMEM_START) >> 12] & 0xfffff000;
 }
 
 //return 0 if not free page

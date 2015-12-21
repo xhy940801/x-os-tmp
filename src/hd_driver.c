@@ -13,6 +13,8 @@
 #include "sched.h"
 #include "errno.h"
 #include "pci.h"
+#include "mem.h"
+#include "interrupt.h"
 
 #define HD_OP_CAPACITY 32
 
@@ -68,6 +70,7 @@ struct hd_subdriver_desc_t
 struct hd_info_t
 {
     int baseport;
+    int bmr_base_port;
     int slavebit;
     int flags;
     size_t len;
@@ -86,9 +89,17 @@ struct lba48_partition_table_desc_t
     uint32_t lenlo;
 };
 
+struct prdt_desc_t
+{
+    uint32_t physical_address;
+    uint16_t byte_count;
+    uint16_t eot;
+};
+
 static struct hd_subdriver_desc_t hd_subdrivers[4];
 static struct hd_info_t hd_infos[1];
 static uint8_t driver_last_selectors[1];
+static uint32_t bmr_base_port;
 
 #define PORT_DATA           0x0000
 #define PORT_SELECTORCOUNT  0x0002
@@ -98,6 +109,10 @@ static uint8_t driver_last_selectors[1];
 #define PORT_DRIVERSELECT   0x0006
 #define PORT_CMDSTATUS      0x0007
 #define PORT_DRIVER_CTL     0x0206
+
+#define PORT_BMI_M_COMMAND  0x0000
+#define PORT_BMI_M_STATUS   0x0002
+#define PORT_BMI_M_PRDTADDR 0x0004
 
 static inline void read256word(int port, uint16_t* p)
 {
@@ -513,8 +528,69 @@ void init_hd_pci_info()
     union pci_configuration_space_desc_t pci_info;
     int ret = enumerating_ata_controller(&pci_info);
     printk("ret [%d] addr [%u] <<>>\n", ret, pci_info.bar4);
-    panic("hahaha");
+    kassert(pci_info.bar4 & 0x01);
+    bmr_base_port = pci_info.bar4 & (0xfffffffc);
+    printk("baseport [%u]\n", bmr_base_port);
 }
+
+void do_hd_irq()
+{
+    v_lock_task();
+    struct hd_info_t* info = &hd_infos[0];
+    int status = _inb(bmr_base_port + PORT_BMI_M_STATUS);
+    int dstatus = _inb(info->baseport + PORT_CMDSTATUS);
+    uint32_t lbalo = _inb(info->baseport + PORT_LBALO);
+    uint32_t lbamid = _inb(info->baseport + PORT_LBAMID);
+    uint32_t lbahi = _inb(info->baseport + PORT_LBAHI);
+    printk("st0 [%u] st1 [%u] lba [%u] [%u] [%u]\n", status, dstatus, lbalo, lbamid, lbahi);
+    uint32_t* data = (uint32_t*) kgetpersistedpage(1);
+    for(size_t i = 0; i < 8; ++i)
+    {
+        int ret = hd_pio_readoneblock(info, 0x21 + i, data + 128 * i);
+        if(ret != 0)
+            printk("at read i [%u]\n", i);
+    }
+    for(size_t i = 0; i < 4096 / sizeof(data[0]); ++i)
+    {
+        if(data[i] != i)
+        {
+            printk("at data[%u] = %u\n", i, data[i]);
+            panic("");
+        }
+    }
+    panic("");
+    v_unlock_task();
+}
+
+void test_dma_write()
+{
+    struct prdt_desc_t* prdt = (struct prdt_desc_t*) kgetpersistedpage(1);
+    uint32_t* data = (uint32_t*) kgetpersistedpage(1);
+    for(size_t i = 0; i < 4096 / sizeof(data[0]); ++i)
+        data[i] = i;
+    prdt[0].physical_address = get_physical_addr((uint32_t) data);
+    prdt[0].byte_count = 4096;
+    prdt[0].eot = 0x8000;
+
+    uint32_t prdt_physical_addr = get_physical_addr((uint32_t) prdt);
+    _outd(bmr_base_port + PORT_BMI_M_PRDTADDR, prdt_physical_addr);
+    _outb(bmr_base_port + PORT_BMI_M_COMMAND, 0x00);
+    _outb(bmr_base_port + PORT_BMI_M_STATUS, 0x06);
+
+    struct hd_info_t* info = &hd_infos[0];
+
+    uint32_t lba = 0x21;
+    _outb(info->baseport + PORT_DRIVERSELECT, 0xe0 | info->slavebit | ((lba >> 24) & 0x0f));
+    _outb(info->baseport + PORT_SELECTORCOUNT, 8);
+    _outb(info->baseport + PORT_LBALO, lba & 0xff);
+    _outb(info->baseport + PORT_LBAMID, ((lba >> 8) & 0xff));
+    _outb(info->baseport + PORT_LBAHI, ((lba >> 16) & 0xff));
+    _outb(info->baseport + PORT_CMDSTATUS, 0xca);
+
+    _outb(bmr_base_port + PORT_BMI_M_COMMAND, 0x01);
+}
+
+void on_hd_interrupt_request();
 
 void init_hd_driver_module()
 {
@@ -534,4 +610,7 @@ void init_hd_driver_module()
         if(hd_subdrivers[i].baseport != 0)
             printk("partition %d: startlba [%u] len [%u]\n", i, hd_subdrivers[i].startlba, hd_subdrivers[i].len);
     init_hd_pci_info();
+    clear_8259_mask(14);
+    setup_intr_desc(0x2e, on_hd_interrupt_request, 0);
+    test_dma_write();
 }

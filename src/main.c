@@ -72,7 +72,7 @@ int main1()
     init_schedule_module();
     init_wait_module();
 
-    //clear_8259_mask(2);
+    clear_8259_mask(2);
 
     printk("\f");
     uint32_t memsize = get_sysparams()->memsize;

@@ -3,7 +3,7 @@
 #include "stdint.h"
 #include "stddef.h"
 
-#define MEM_START 0xc0000000
+#define KMEM_START 0xc0000000
 
 struct mem_desc_t
 {
@@ -39,6 +39,13 @@ void* get_one_page(uint16_t share, uint16_t flags, uint32_t* physical_addr);
 void flush_page_table();
 
 void init_paging_module();
+
+static inline uint32_t get_physical_addr(uint32_t dst)
+{
+    uint32_t* page_table = (uint32_t*) (KMEM_START);
+    return page_table[(dst - KMEM_START) >> 12] & 0xfffff000;
+}
+
 
 struct process_info_t;
 int mem_fork(struct process_info_t* dst, struct process_info_t* src);

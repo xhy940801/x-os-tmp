@@ -328,12 +328,12 @@ int fd_fork(struct process_info_t* dst, struct process_info_t* src)
 
 int sys_write(int fd, const char* buf, size_t len)
 {
-    if(((unsigned long) buf) >= MEM_START)
+    if(((unsigned long) buf) >= KMEM_START)
     {
         cur_process->last_errno = ENOMEM;
         return -1;
     }
-    if((MEM_START - ((unsigned long) buf)) < len)
+    if((KMEM_START - ((unsigned long) buf)) < len)
     {
         cur_process->last_errno = ENOMEM;
         return -1;
@@ -343,12 +343,12 @@ int sys_write(int fd, const char* buf, size_t len)
 
 int sys_read(int fd, char* buf, size_t len)
 {
-    if(((unsigned long) buf) >= MEM_START)
+    if(((unsigned long) buf) >= KMEM_START)
     {
         cur_process->last_errno = ENOMEM;
         return -1;
     }
-    if((MEM_START - ((unsigned long) buf)) < len)
+    if((KMEM_START - ((unsigned long) buf)) < len)
     {
         cur_process->last_errno = ENOMEM;
         return -1;

@@ -51,13 +51,13 @@ void* get_address_area(size_t n)
         uint32_t pos = node - buddy_allocs[n].list_start;
         //printk("in buddy [%u] pos [%u]\n", n, pos);
         buddy_allocs[n].map[(pos >> 1) / 32] ^= (1 << ((pos >> 1) % 32));
-        return (void*) (pos * (1 << n) * 4096 + MEM_START);
+        return (void*) (pos * (1 << n) * 4096 + KMEM_START);
     }
     void* parent = get_address_area(n + 1);
     if(parent == NULL)
         return NULL;
     uint32_t pos = (uint32_t) parent;
-    pos = (pos - MEM_START) / 4096;
+    pos = (pos - KMEM_START) / 4096;
     pos /= (1 << n);
     //printk("parent pos [%u] at [%u]\n", pos, n);
     buddy_allocs[n].map[(pos >> 1) / 32] ^= (1 << ((pos >> 1) % 32));
@@ -72,9 +72,9 @@ void* get_address_area(size_t n)
 void free_address_area(void* p, size_t n)
 {
     kassert(n < BUDDY_DEP);
-    kassert(((uint32_t) p) >= MEM_START);
+    kassert(((uint32_t) p) >= KMEM_START);
     uint32_t pos = (uint32_t) p;
-    pos = (pos - MEM_START) / 4096;
+    pos = (pos - KMEM_START) / 4096;
     pos /= (1 << n);
     buddy_allocs[n].map[(pos >> 1) / 32] ^= (1 << ((pos >> 1) % 32));
     if(buddy_allocs[n].map[(pos >> 1) / 32] & (1 << ((pos >> 1) % 32)) || n == BUDDY_DEP - 1)

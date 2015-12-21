@@ -6,7 +6,7 @@
 #define _cld() __asm__("cld")
 #define _outb(port, data) __asm__ volatile("outb %%al, %%dx"::"d"(port),"a"(data))
 #define _outw(port, data) __asm__ volatile("outw %%ax, %%dx"::"d"(port),"a"(data))
-#define _outd(port, data) __asm__ volatile("outl %%ax, %%dx"::"d"(port),"a"(data))
+#define _outd(port, data) __asm__ volatile("outl %%eax, %%dx"::"d"(port),"a"(data))
 #define _inb(port) ({char _v; __asm__ volatile("inb %%dx, %%al":"=a"(_v):"d"(port)); _v;})
 #define _inw(port) ({short _v; __asm__ volatile("inw %%dx, %%ax":"=a"(_v):"d"(port)); _v;})
 #define _ind(port) ({int _v; __asm__ volatile("inl %%dx, %%eax":"=a"(_v):"d"(port)); _v;})

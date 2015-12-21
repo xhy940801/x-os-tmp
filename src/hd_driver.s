@@ -1,10 +1,10 @@
-global on_lack_of_page
+global on_hd_interrupt_request
 
-extern process_lack_page
 extern get_locker_count
 extern set_locker_count
+extern do_hd_irq
 
-on_lack_of_page:
+on_hd_interrupt_request:
     push ds
     push es
     push fs
@@ -17,33 +17,27 @@ on_lack_of_page:
     push eax
     push ecx
     push edx
-    mov eax, [esp + 44]
-    push eax
     cld
+    
     mov eax, 0x10
     mov ds, eax
     mov es, eax
     mov fs, eax
     mov gs, eax
 
-    cli
     call get_locker_count
-    mov [esp + 16], eax
+    mov [esp + 12], eax
     push 0
     call set_locker_count
     add esp, 4
-    sti
 
-    call process_lack_page
+    call do_hd_irq
 
-    cli
-    mov eax, [esp + 16]
+    mov eax, [esp + 12]
     push eax
     call set_locker_count
     add esp, 4
-    sti
 
-    add esp, 4
     pop edx
     pop ecx
     pop eax
@@ -56,5 +50,4 @@ on_lack_of_page:
     pop fs
     pop es
     pop ds
-    add esp, 4
-    iret
+    iret 
