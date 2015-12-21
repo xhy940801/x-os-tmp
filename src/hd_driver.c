@@ -67,14 +67,27 @@ struct hd_subdriver_desc_t
     size_t len;
 };
 
+struct prdt_desc_t
+{
+    uint32_t physical_address;
+    uint16_t byte_count;
+    uint16_t eot;
+};
+
+struct bmr_info_t
+{
+    int bmr_base_port;
+    struct prdt_desc_t* prdt;
+};
+
 struct hd_info_t
 {
     int baseport;
-    int bmr_base_port;
     int slavebit;
     int flags;
     size_t len;
     struct hd_elevator_desc_t elevator;
+    struct bmr_info_t bmr;
 };
 
 struct lba48_partition_table_desc_t
@@ -89,17 +102,9 @@ struct lba48_partition_table_desc_t
     uint32_t lenlo;
 };
 
-struct prdt_desc_t
-{
-    uint32_t physical_address;
-    uint16_t byte_count;
-    uint16_t eot;
-};
-
 static struct hd_subdriver_desc_t hd_subdrivers[4];
 static struct hd_info_t hd_infos[1];
-static uint8_t driver_last_selectors[1];
-static uint32_t bmr_base_port;
+static struct hd_info_t* last_op_hd;
 
 #define PORT_DATA           0x0000
 #define PORT_SELECTORCOUNT  0x0002
@@ -276,12 +281,12 @@ int reset_hd_partition_table(struct hd_info_t* info)
     return hd_pio_writeoneblock(info, 0, buf);
 }
 
-int hd_irq_start_read(struct block_buffer_desc_t* start, size_t count)
+int hd_irq_start_read(struct hd_info_t* hd_info, struct block_buffer_desc_t* start, size_t count)
 {
     return 0;
 }
 
-int hd_irq_start_write(struct block_buffer_desc_t* start, size_t count)
+int hd_irq_start_write(struct hd_info_t* hd_info, struct block_buffer_desc_t* start, size_t count)
 {
     return 0;
 }
@@ -328,9 +333,9 @@ int hd_blocks_op(struct hd_operation_append_desc_t* hd_op_append, int timeout)
                 kassert(circular_list_is_empty(&hd_info->elevator.down_head));
                 int res;
                 if(hd_op_append->op_type == HD_OPERATION_WRITE)
-                    res = hd_irq_start_write(start, count);
+                    res = hd_irq_start_write(hd_info, start, count);
                 else
-                    res = hd_irq_start_read(start, count);
+                    res = hd_irq_start_read(hd_info, start, count);
                 if(res < 0)
                 {
                     unlock_task();
@@ -396,9 +401,9 @@ int hd_blocks_op(struct hd_operation_append_desc_t* hd_op_append, int timeout)
                 kassert(circular_list_is_empty(&hd_info->elevator.up_head));
                 int res;
                 if(hd_op_append->op_type == HD_OPERATION_WRITE)
-                    res = hd_irq_start_write(start, count);
+                    res = hd_irq_start_write(hd_info, start, count);
                 else
-                    res = hd_irq_start_read(start, count);
+                    res = hd_irq_start_read(hd_info, start, count);
                 if(res < 0)
                 {
                     unlock_task();
@@ -523,54 +528,110 @@ int enumerating_ata_controller(union pci_configuration_space_desc_t* pci_info)
     return -1;
 }
 
-void init_hd_pci_info()
+void init_hd_pci_info(struct hd_info_t* hd_info)
 {
     union pci_configuration_space_desc_t pci_info;
     int ret = enumerating_ata_controller(&pci_info);
-    printk("ret [%d] addr [%u] <<>>\n", ret, pci_info.bar4);
+    kassert(ret == 0);
     kassert(pci_info.bar4 & 0x01);
-    bmr_base_port = pci_info.bar4 & (0xfffffffc);
-    printk("baseport [%u]\n", bmr_base_port);
+    hd_info->bmr.bmr_base_port = pci_info.bar4 & (0xfffffffc);
+    hd_info->bmr.prdt = kgetpersistedpage(1);
 }
 
 void do_hd_irq()
 {
-    v_lock_task();
-    struct hd_info_t* info = &hd_infos[0];
-    int status = _inb(bmr_base_port + PORT_BMI_M_STATUS);
-    int dstatus = _inb(info->baseport + PORT_CMDSTATUS);
-    uint32_t lbalo = _inb(info->baseport + PORT_LBALO);
-    uint32_t lbamid = _inb(info->baseport + PORT_LBAMID);
-    uint32_t lbahi = _inb(info->baseport + PORT_LBAHI);
-    printk("st0 [%u] st1 [%u] lba [%u] [%u] [%u]\n", status, dstatus, lbalo, lbamid, lbahi);
-    uint32_t* data = (uint32_t*) kgetpersistedpage(1);
-    for(size_t i = 0; i < 8; ++i)
-    {
-        int ret = hd_pio_readoneblock(info, 0x21 + i, data + 128 * i);
-        if(ret != 0)
-            printk("at read i [%u]\n", i);
-    }
-    for(size_t i = 0; i < 4096 / sizeof(data[0]); ++i)
-    {
-        if(data[i] != i)
-        {
-            printk("at data[%u] = %u\n", i, data[i]);
-            panic("");
-        }
-    }
-    panic("");
-    v_unlock_task();
 }
 
+/*struct prdt_desc_t* prdt;
+void do_hd_irq()
+{
+    static int irqc = 0;
+    v_lock_task();
+    printk("CCCCCCCCCCCCCCCCC\n");
+    if(irqc == 0)
+    {
+        struct hd_info_t* info = &hd_infos[0];
+        int status = _inb(bmr_base_port + PORT_BMI_M_STATUS);
+        int dstatus = _inb(info->baseport + PORT_CMDSTATUS);
+        uint32_t lbalo = _inb(info->baseport + PORT_LBALO);
+        uint32_t lbamid = _inb(info->baseport + PORT_LBAMID);
+        uint32_t lbahi = _inb(info->baseport + PORT_LBAHI);
+        printk("st0 [%u] st1 [%u] lba [%u] [%u] [%u]\n", status, dstatus, lbalo, lbamid, lbahi);
+        uint32_t* data = (uint32_t*) kgetpersistedpage(1);
+        for(size_t i = 0; i < 8; ++i)
+        {
+            int ret = hd_pio_readoneblock(info, 0x600 + i, (char*) (data + 128 * i));
+            if(ret != 0)
+                printk("at read i [%u]\n", i);
+        }
+        for(size_t i = 0; i < 4096 / sizeof(data[0]); ++i)
+        {
+            if(data[i] != i)
+            {
+                printk("at data[%u] = %u\n", i, data[i]);
+                panic("");
+            }
+        }
+        [/ *]data = (uint32_t*) kgetpersistedpage(1);
+        for(size_t i = 0; i < 4096 / sizeof(data[0]); ++i)
+            data[i] = i + 1024;
+        prdt[1].physical_address = get_physical_addr((uint32_t) data);
+        prdt[1].byte_count = 4096;
+        prdt[1].eot = 0x8000;
+        uint32_t lba = 0x500;
+        _outb(info->baseport + PORT_DRIVERSELECT, 0xe0 | info->slavebit | ((lba >> 24) & 0x0f));
+        _outb(info->baseport + PORT_SELECTORCOUNT, 8);
+        _outb(info->baseport + PORT_LBALO, lba & 0xff);
+        _outb(info->baseport + PORT_LBAMID, ((lba >> 8) & 0xff));
+        _outb(info->baseport + PORT_LBAHI, ((lba >> 16) & 0xff));
+        _outb(info->baseport + PORT_CMDSTATUS, 0xca);
+        ++irqc;*//*
+        _outb(0xa0, 0x20);
+        _outb(0x20, 0x20);
+        panic("");
+    }
+    else
+    {
+        struct hd_info_t* info = &hd_infos[0];
+        int status = _inb(bmr_base_port + PORT_BMI_M_STATUS);
+        int dstatus = _inb(info->baseport + PORT_CMDSTATUS);
+        uint32_t lbalo = _inb(info->baseport + PORT_LBALO);
+        uint32_t lbamid = _inb(info->baseport + PORT_LBAMID);
+        uint32_t lbahi = _inb(info->baseport + PORT_LBAHI);
+        printk("st0 [%u] st1 [%u] lba [%u] [%u] [%u]\n", status, dstatus, lbalo, lbamid, lbahi);
+        uint32_t* data = (uint32_t*) kgetpersistedpage(1);
+        for(size_t i = 0; i < 8; ++i)
+        {
+            int ret = hd_pio_readoneblock(info, 0x500 + i, (char*) (data + 128 * i));
+            if(ret != 0)
+                printk("at read i [%u]\n", i);
+        }
+        for(size_t i = 0; i < 4096 / sizeof(data[0]); ++i)
+        {
+            if(data[i] != i + 1024)
+            {
+                printk("at data[%u] = %u\n", i, data[i]);
+                panic("");
+            }
+        }
+        panic("");
+    }
+
+    v_unlock_task();
+}*/
+/*
 void test_dma_write()
 {
-    struct prdt_desc_t* prdt = (struct prdt_desc_t*) kgetpersistedpage(1);
+    prdt = (struct prdt_desc_t*) kgetpersistedpage(1);
     uint32_t* data = (uint32_t*) kgetpersistedpage(1);
     for(size_t i = 0; i < 4096 / sizeof(data[0]); ++i)
         data[i] = i;
     prdt[0].physical_address = get_physical_addr((uint32_t) data);
-    prdt[0].byte_count = 4096;
-    prdt[0].eot = 0x8000;
+    prdt[0].byte_count = 2048;
+    prdt[0].eot = 0x0000;
+    prdt[1].physical_address = prdt[0].physical_address + 2048;
+    prdt[1].byte_count = 2048;
+    prdt[1].eot = 0x8000;
 
     uint32_t prdt_physical_addr = get_physical_addr((uint32_t) prdt);
     _outd(bmr_base_port + PORT_BMI_M_PRDTADDR, prdt_physical_addr);
@@ -579,16 +640,16 @@ void test_dma_write()
 
     struct hd_info_t* info = &hd_infos[0];
 
-    uint32_t lba = 0x21;
+    uint32_t lba = 0x600;
     _outb(info->baseport + PORT_DRIVERSELECT, 0xe0 | info->slavebit | ((lba >> 24) & 0x0f));
-    _outb(info->baseport + PORT_SELECTORCOUNT, 8);
+    _outb(info->baseport + PORT_SELECTORCOUNT, 4);
     _outb(info->baseport + PORT_LBALO, lba & 0xff);
     _outb(info->baseport + PORT_LBAMID, ((lba >> 8) & 0xff));
     _outb(info->baseport + PORT_LBAHI, ((lba >> 16) & 0xff));
     _outb(info->baseport + PORT_CMDSTATUS, 0xca);
 
     _outb(bmr_base_port + PORT_BMI_M_COMMAND, 0x01);
-}
+}*/
 
 void on_hd_interrupt_request();
 
@@ -609,8 +670,8 @@ void init_hd_driver_module()
     for(size_t i = 0; i < sizeof(hd_subdrivers) / sizeof(hd_subdrivers[0]); ++i)
         if(hd_subdrivers[i].baseport != 0)
             printk("partition %d: startlba [%u] len [%u]\n", i, hd_subdrivers[i].startlba, hd_subdrivers[i].len);
-    init_hd_pci_info();
+    init_hd_pci_info(&hd_infos[0]);
     clear_8259_mask(14);
     setup_intr_desc(0x2e, on_hd_interrupt_request, 0);
-    test_dma_write();
+    //test_dma_write();
 }

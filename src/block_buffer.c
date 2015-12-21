@@ -7,6 +7,7 @@
 #include "block_driver.h"
 #include "sched.h"
 #include "blkbuffer_rb_tree.h"
+#include "task_locker.h"
 
 static struct block_buffer_manager_info_t blk_buffer_manager;
 static struct block_buffer_desc_t blank_buffer;
@@ -58,7 +59,8 @@ struct block_buffer_desc_t* flush_block_buffer(struct block_buffer_desc_t* start
     int _res = ksemaphore_down(&blk_buffer_manager.inlist_sem, rml_count, -1);
     kassert(_res >= 0);
     end = start;
-    if(block_driver_write_blocks(start, len, timeout) < 0)
+    ssize_t blk_write_ret = block_driver_write_blocks(start, len, timeout);
+    if(blk_write_ret <= 0)
     {
         for(size_t i = 0; i < len; ++i)
         {
@@ -82,36 +84,54 @@ struct block_buffer_desc_t* flush_block_buffer(struct block_buffer_desc_t* start
         }
         return NULL;
     }
-    else
+    for(ssize_t i = 0; i < blk_write_ret; ++i)
     {
-        for(size_t i = 0; i < len; ++i)
+        kassert(end->flags & BLKBUFFER_FLAG_FLUSHING);
+        kassert(end->flags & BLKBUFFER_FLAG_LOCK);
+        kassert(!(end->flags & BLKBUFFER_FLAG_INQUEUE));
+        if(end->flags & BLKBUFFER_FLAG_DIRTY)
         {
-            kassert(end->flags & BLKBUFFER_FLAG_FLUSHING);
-            kassert(end->flags & BLKBUFFER_FLAG_LOCK);
-            kassert(!(end->flags & BLKBUFFER_FLAG_INQUEUE));
-            if(end->flags & BLKBUFFER_FLAG_DIRTY)
-            {
-                circular_list_insert(&blk_buffer_manager.dirty_list_head, &end->list_node);
-                end->flags = BLKBUFFER_FLAG_DIRTY | BLKBUFFER_FLAG_INQUEUE;
-            }
-            else
-            {
-                circular_list_insert(&blk_buffer_manager.sync_list_head, &end->list_node);
-                end->flags = BLKBUFFER_FLAG_INQUEUE;
-            }
-            next = parentof(
-                blkbuffer_rb_tree_next(&(blk_buffer_manager.rb_tree_head), &(end->rb_tree_node)),
-                struct block_buffer_desc_t,
-                rb_tree_node
-            );
-            kassert(
-                (i == len - 1) || (
-                    end->driver_type == next->driver_type &&
-                    end->block_no + 1 == next->block_no
-                )
-            );
-            end = next;
+            circular_list_insert(&blk_buffer_manager.dirty_list_head, &end->list_node);
+            end->flags = BLKBUFFER_FLAG_DIRTY | BLKBUFFER_FLAG_INQUEUE;
         }
+        else
+        {
+            circular_list_insert(&blk_buffer_manager.sync_list_head, &end->list_node);
+            end->flags = BLKBUFFER_FLAG_INQUEUE;
+        }
+        next = parentof(
+            blkbuffer_rb_tree_next(&(blk_buffer_manager.rb_tree_head), &(end->rb_tree_node)),
+            struct block_buffer_desc_t,
+            rb_tree_node
+        );
+        kassert(
+            (i == len - 1) || (
+                end->driver_type == next->driver_type &&
+                end->block_no + 1 == next->block_no
+            )
+        );
+        end = next;
+    }
+    for(size_t i = (size_t) blk_write_ret; i < len; ++i)
+    {
+        kassert(end->flags & BLKBUFFER_FLAG_FLUSHING);
+        kassert(end->flags & BLKBUFFER_FLAG_LOCK);
+        kassert(!(end->flags & BLKBUFFER_FLAG_INQUEUE));
+        circular_list_insert(&blk_buffer_manager.dirty_list_head, &end->list_node);
+        end->flags = BLKBUFFER_FLAG_DIRTY | BLKBUFFER_FLAG_INQUEUE;
+        next = parentof(
+            blkbuffer_rb_tree_next(&(blk_buffer_manager.rb_tree_head), &(end->rb_tree_node)),
+            struct block_buffer_desc_t,
+            rb_tree_node
+        );
+        kassert(
+            (i == len - 1) || (
+                end->driver_type == next->driver_type &&
+                end->block_no + 1 == next->block_no
+            )
+        );
+        end = next;
+
     }
     return end;
 }
@@ -139,6 +159,7 @@ void init_block_buffer_module()
 
 struct block_buffer_desc_t* get_block_buffer(uint16_t main_driver, uint16_t sub_driver, size_t block_no, int timeout)
 {
+    lock_task();
     struct block_buffer_desc_t* blk = parentof(
         blkbuffer_rb_tree_find(&blk_buffer_manager.rb_tree_head, main_driver, sub_driver, block_no),
         struct block_buffer_desc_t,
@@ -147,7 +168,10 @@ struct block_buffer_desc_t* get_block_buffer(uint16_t main_driver, uint16_t sub_
     if(blk == NULL)
     {
         if(ksemaphore_down(&blk_buffer_manager.inlist_sem, 1, timeout) != 1)
+        {
+            unlock_task();
             return NULL;
+        }
         if(circular_list_is_empty(&blk_buffer_manager.free_list_head))
         {
             if(circular_list_is_empty(&blk_buffer_manager.sync_list_head))
@@ -155,7 +179,10 @@ struct block_buffer_desc_t* get_block_buffer(uint16_t main_driver, uint16_t sub_
                 kassert(!circular_list_is_empty(&blk_buffer_manager.dirty_list_head));
                 long cur_jiffies = jiffies;
                 if(flush_block_buffer(parentof(blk_buffer_manager.dirty_list_head.next, struct block_buffer_desc_t, list_node), timeout) == NULL)
+                {
+                    unlock_task();
                     return NULL;
+                }
                 if(timeout > 0)
                     timeout = timeout > (jiffies - cur_jiffies) ? timeout - (jiffies - cur_jiffies) : -1;
             }
@@ -166,16 +193,25 @@ struct block_buffer_desc_t* get_block_buffer(uint16_t main_driver, uint16_t sub_
             circular_list_remove(&tmp->list_node);
             circular_list_insert(&blk_buffer_manager.free_list_head, &tmp->list_node);
         }
-        blk = parentof(blk_buffer_manager.free_list_head.next, struct block_buffer_desc_t, list_node);
-        circular_list_remove(&blk_buffer_manager.free_list_head);
-        blk->flags = BLKBUFFER_FLAG_UNSYNC;
-        blk->main_driver = main_driver;
-        blk->sub_driver = sub_driver;
-        blk->block_no = block_no;
-        blkbuffer_rb_tree_insert(&blk_buffer_manager.rb_tree_head, &blk->rb_tree_node);
+        blk = parentof(
+            blkbuffer_rb_tree_find(&blk_buffer_manager.rb_tree_head, main_driver, sub_driver, block_no),
+            struct block_buffer_desc_t,
+            rb_tree_node
+        );
+        if(blk == NULL)
+        {
+            blk = parentof(blk_buffer_manager.free_list_head.next, struct block_buffer_desc_t, list_node);
+            circular_list_remove(&blk_buffer_manager.free_list_head);
+            blk->flags = BLKBUFFER_FLAG_UNSYNC;
+            blk->main_driver = main_driver;
+            blk->sub_driver = sub_driver;
+            blk->block_no = block_no;
+            blkbuffer_rb_tree_insert(&blk_buffer_manager.rb_tree_head, &blk->rb_tree_node);
+        }
     }
     blk->op_time = jiffies;
     ++blk->used_count;
+    unlock_task();
     return blk;
 }
 

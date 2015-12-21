@@ -12,14 +12,17 @@ void kmutex_init(struct kmutex_desc_t* mutex)
 
 int kmutex_lock(struct kmutex_desc_t* mutex, int timeout)
 {
+    lock_task();
     if(mutex->head.next == &(mutex->head))
     {
         circular_list_insert(&(mutex->head), &(cur_process->waitlist_node.node));
+        unlock_task();
         return 0;
     }
     if(timeout < 0)
     {
         cur_process->last_errno = EAGAIN;
+        unlock_task();
         return -1;
     }
     circular_list_insert(mutex->head.pre, &(cur_process->waitlist_node.node));
@@ -33,14 +36,17 @@ int kmutex_lock(struct kmutex_desc_t* mutex, int timeout)
     if(mutex->head.next ==  &(cur_process->waitlist_node.node))
     {
         circular_list_remove(&(cur_process->waitlist_node.node));
+        unlock_task();
         return 0;
     }
     cur_process->last_errno = cur_process->sub_errno;
+    unlock_task();
     return -1;
 }
 
 void kmutex_unlock(struct kmutex_desc_t* mutex)
 {
+    lock_task();
     kassert(circular_list_is_inlist(&(mutex->head), &(cur_process->waitlist_node.node)) == 0);
     kassert(mutex->head.next == &(cur_process->waitlist_node.node));
     circular_list_remove(&(cur_process->waitlist_node.node));
@@ -50,4 +56,5 @@ void kmutex_unlock(struct kmutex_desc_t* mutex)
         kwakeup(proc);
         in_sched_queue(proc);
     }
+    unlock_task();
 }
