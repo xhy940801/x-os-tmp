@@ -106,6 +106,7 @@ struct lba48_partition_table_desc_t
 static struct hd_subdriver_desc_t hd_subdrivers[4];
 static struct hd_info_t hd_infos[1];
 static struct hd_info_t* last_op_hd;
+static struct hd_info_t* last_op_hd;
 
 #define PORT_DATA           0x0000
 #define PORT_SELECTORCOUNT  0x0002
@@ -284,6 +285,29 @@ int reset_hd_partition_table(struct hd_info_t* info)
 
 int hd_irq_start_read(struct hd_info_t* hd_info, struct block_buffer_desc_t* start, size_t count)
 {
+    struct block_buffer_desc_t* end = start;
+    for(size_t i = 0; i < count; ++i)
+    {
+        hd_info->bmr.prdt[i].physical_address = get_physical_addr((uint32_t) end->buffer);
+        hd_info->bmr.prdt[i].byte_count = 4096;
+        hd_info->bmr.prdt[i].eot = 0x0000;
+        end = block_buffer_get_next_node(end);
+    }
+    hd_info->bmr.prdt[count - 1].eot = 0x8000;
+
+    _outd(hd_info->bmr.bmr_base_port + PORT_BMI_M_PRDTADDR, hd_info->bmr.prdt_physical_address);
+    _outb(hd_info->bmr.bmr_base_port + PORT_BMI_M_COMMAND, 0x80);
+    _outb(hd_info->bmr.bmr_base_port + PORT_BMI_M_STATUS, 0x06);
+
+    uint32_t lba = 0x600;
+    _outb(hd_info->baseport + PORT_DRIVERSELECT, 0xe0 | hd_info->slavebit | ((lba >> 24) & 0x0f));
+    _outb(hd_info->baseport + PORT_SELECTORCOUNT, 4);
+    _outb(hd_info->baseport + PORT_LBALO, lba & 0xff);
+    _outb(hd_info->baseport + PORT_LBAMID, ((lba >> 8) & 0xff));
+    _outb(hd_info->baseport + PORT_LBAHI, ((lba >> 16) & 0xff));
+    _outb(hd_info->baseport + PORT_CMDSTATUS, 0xc8);
+
+    _outb(hd_info->bmr.bmr_base_port + PORT_BMI_M_COMMAND, 0x01);
     return 0;
 }
 
@@ -324,6 +348,7 @@ int hd_blocks_op(struct hd_operation_append_desc_t* hd_op_append, int timeout)
     count <<= 2;
     
     struct hd_info_t* hd_info = &hd_infos[start->sub_driver >> 2];
+    last_op_hd = hd_info;
     lock_task();
     if(circular_list_is_empty(&hd_info->elevator.free_head))
     {
