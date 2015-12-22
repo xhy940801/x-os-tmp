@@ -299,9 +299,9 @@ int hd_irq_start_read(struct hd_info_t* hd_info, struct block_buffer_desc_t* sta
     _outb(hd_info->bmr.bmr_base_port + PORT_BMI_M_COMMAND, 0x80);
     _outb(hd_info->bmr.bmr_base_port + PORT_BMI_M_STATUS, 0x06);
 
-    uint32_t lba = 0x600;
+    uint32_t lba = start->block_no << 2;
     _outb(hd_info->baseport + PORT_DRIVERSELECT, 0xe0 | hd_info->slavebit | ((lba >> 24) & 0x0f));
-    _outb(hd_info->baseport + PORT_SELECTORCOUNT, 4);
+    _outb(hd_info->baseport + PORT_SELECTORCOUNT, count << 2);
     _outb(hd_info->baseport + PORT_LBALO, lba & 0xff);
     _outb(hd_info->baseport + PORT_LBAMID, ((lba >> 8) & 0xff));
     _outb(hd_info->baseport + PORT_LBAHI, ((lba >> 16) & 0xff));
@@ -327,9 +327,9 @@ int hd_irq_start_write(struct hd_info_t* hd_info, struct block_buffer_desc_t* st
     _outb(hd_info->bmr.bmr_base_port + PORT_BMI_M_COMMAND, 0x00);
     _outb(hd_info->bmr.bmr_base_port + PORT_BMI_M_STATUS, 0x06);
 
-    uint32_t lba = 0x600;
+    uint32_t lba = start->block_no << 2;
     _outb(hd_info->baseport + PORT_DRIVERSELECT, 0xe0 | hd_info->slavebit | ((lba >> 24) & 0x0f));
-    _outb(hd_info->baseport + PORT_SELECTORCOUNT, 4);
+    _outb(hd_info->baseport + PORT_SELECTORCOUNT, count << 2);
     _outb(hd_info->baseport + PORT_LBALO, lba & 0xff);
     _outb(hd_info->baseport + PORT_LBAMID, ((lba >> 8) & 0xff));
     _outb(hd_info->baseport + PORT_LBAHI, ((lba >> 16) & 0xff));
@@ -345,7 +345,6 @@ int hd_blocks_op(struct hd_operation_append_desc_t* hd_op_append, int timeout)
     size_t count = hd_op_append->count;
     kassert(count < 32);
     kassert(hd_op_append->op_type == HD_OPERATION_WRITE || hd_op_append->op_type == HD_OPERATION_READ);
-    count <<= 2;
     
     struct hd_info_t* hd_info = &hd_infos[start->sub_driver >> 2];
     last_op_hd = hd_info;
@@ -588,8 +587,102 @@ void init_hd_pci_info(struct hd_info_t* hd_info)
     hd_info->bmr.prdt_physical_address = get_physical_addr((uint32_t) hd_info->bmr.prdt);
 }
 
+static inline void set_hd_op_result(struct hd_operation_desc_t* op, int result)
+{
+    struct hd_operation_append_desc_t* op_append = (struct hd_operation_append_desc_t*) op->proc->waitlist_node.data;
+    op_append->result = result;
+}
+
+static inline uint32_t get_ata_lba(int baseport)
+{
+    uint32_t lba = ((uint32_t) _inb(baseport + PORT_DRIVERSELECT)) & 0x0f;
+    lba <<= 8;
+    lba |= ((uint32_t) _inb(baseport + PORT_LBAHI)) & 0xff;
+    lba <<= 8;
+    lba |= ((uint32_t) _inb(baseport + PORT_LBAMID)) & 0xff;
+    lba <<= 8;
+    lba |= ((uint32_t) _inb(baseport + PORT_LBALO)) & 0xff;
+    return lba;
+}
+
 void do_hd_irq()
 {
+    struct hd_info_t* hd_info = last_op_hd;
+    int dma_status = _inb(hd_info->bmr.bmr_base_port + PORT_BMI_M_STATUS);
+    int ata_status = _inb(hd_info->baseport + PORT_CMDSTATUS);
+    struct hd_operation_desc_t* cur_op;
+    struct hd_operation_desc_t* next_op;
+    _outb(hd_info->bmr.bmr_base_port + PORT_BMI_M_COMMAND, 0x00);
+    kassert(hd_info->elevator.state == HD_ELEVATOR_UP || hd_info->elevator.state == HD_ELEVATOR_DOWN);
+    if(hd_info->elevator.state == HD_ELEVATOR_UP)
+    {
+        kassert(!circular_list_is_empty(&hd_info->elevator.up_head));
+        cur_op = parentof(hd_info->elevator.up_head.next, struct hd_operation_desc_t, node);
+        circular_list_remove(&hd_info->elevator.up_head);
+        if(circular_list_is_empty(&hd_info->elevator.up_head))
+        {
+            hd_info->elevator.state = HD_ELEVATOR_DOWN;
+            if(circular_list_is_empty(&hd_info->elevator.down_head))
+                next_op = NULL;
+            else
+                next_op = parentof(hd_info->elevator.down_head.next, struct hd_operation_desc_t, node);
+        }
+        else
+            next_op = parentof(hd_info->elevator.up_head.next, struct hd_operation_desc_t, node);
+    }
+    else
+    {
+        kassert(!circular_list_is_empty(&hd_info->elevator.down_head));
+        cur_op = parentof(hd_info->elevator.down_head.next, struct hd_operation_desc_t, node);
+        circular_list_remove(&hd_info->elevator.down_head);
+        if(circular_list_is_empty(&hd_info->elevator.down_head))
+        {
+            hd_info->elevator.state = HD_ELEVATOR_UP;
+            if(circular_list_is_empty(&hd_info->elevator.up_head))
+                next_op = NULL;
+            else
+                next_op = parentof(hd_info->elevator.up_head.next, struct hd_operation_desc_t, node);
+        }
+        else
+            next_op = parentof(hd_info->elevator.down_head.next, struct hd_operation_desc_t, node);
+    }
+
+    kwakeup(cur_op->proc);
+    in_sched_queue(cur_op->proc);
+    if(dma_status & 0x02 || ata_status & 0x01)
+    {
+        uint32_t lba = get_ata_lba(hd_info->baseport);
+        size_t block_no = lba >> 2;
+        kassert(block_no >= cur_op->start->block_no);
+        if(block_no == cur_op->start->block_no)
+            set_hd_op_result(cur_op, -1);
+        else
+            set_hd_op_result(cur_op, block_no - cur_op->start->block_no);
+    }
+    else
+    {
+        uint32_t lba = get_ata_lba(hd_info->baseport);
+        kassert(lba == (cur_op->start->block_no << 2) + (cur_op->count << 2));
+        set_hd_op_result(cur_op, cur_op->count);
+    }
+
+    if(next_op != NULL)
+    {
+        int res;
+        kassert(next_op->op_type == HD_OPERATION_READ || next_op->op_type == HD_OPERATION_WRITE);
+        kwakeup(next_op->proc);
+        if(next_op->op_type == HD_OPERATION_READ)
+            res = hd_irq_start_read(hd_info, next_op->start, next_op->count);
+        else
+            res = hd_irq_start_write(hd_info, next_op->start, next_op->count);
+        if(res < 0)
+        {
+            in_sched_queue(next_op->proc);
+            set_hd_op_result(next_op, -1);
+        }
+        else
+            kuninterruptwait(next_op->proc);
+    }
 }
 
 /*struct prdt_desc_t* prdt;

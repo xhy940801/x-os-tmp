@@ -35,7 +35,7 @@ void kwait(struct process_info_t* proc)
 
 void kwakeup(struct process_info_t* proc)
 {
-    kassert(proc->state == PROCESS_INTERRUPTABLE);
+    kassert(proc->state == PROCESS_INTERRUPTABLE || proc->state == PROCESS_UNINTERRUPTABLE);
     circular_list_remove(&(proc->sleep_info.node));
 }
 
@@ -57,19 +57,11 @@ uint32_t ready_processes(struct process_info_t* procs[], uint32_t max)
         struct process_info_t* proc = parentof(node, struct process_info_t, sleep_info.node);
         if(proc->sleep_info.wakeup_jiffies > jiffies)
             continue;
-        kassert(proc->state == PROCESS_INTERRUPTABLE || proc->state == PROCESS_UNINTERRUPTABLE);
+        kassert(proc->state == PROCESS_INTERRUPTABLE);
         proc->sub_errno = ETIMEDOUT;
-        if(proc->state == PROCESS_INTERRUPTABLE)
-        {
-            circular_list_remove(&(proc->sleep_info.node));
-            procs[i] = proc;
-            ++i;
-        }
-        else
-        {
-            circular_list_remove(&(proc->sleep_info.node));
-            circular_list_insert(&wait_list_head, &proc->sleep_info.node);
-        }
+        circular_list_remove(&(proc->sleep_info.node));
+        procs[i] = proc;
+        ++i;
     }
     return i;
 }
