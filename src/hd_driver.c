@@ -107,6 +107,7 @@ static struct hd_subdriver_desc_t hd_subdrivers[4];
 static struct hd_info_t hd_infos[1];
 static struct hd_info_t* last_op_hd;
 static struct hd_info_t* last_op_hd;
+static struct block_driver_desc_t hd_block_driver;
 
 #define PORT_DATA           0x0000
 #define PORT_SELECTORCOUNT  0x0002
@@ -581,6 +582,12 @@ void init_hd_pci_info(struct hd_info_t* hd_info)
     hd_info->bmr.bmr_base_port = pci_info.bar4 & (0xfffffffc);
     hd_info->bmr.prdt = kgetpersistedpage(1);
     hd_info->bmr.prdt_physical_address = get_physical_addr((uint32_t) hd_info->bmr.prdt);
+
+    hd_block_driver.read_blocks = hd_read_blocks;
+    hd_block_driver.write_blocks = hd_write_blocks;
+    hd_block_driver.max_read = 32;
+    hd_block_driver.max_write = 32;
+    block_driver_register(&hd_block_driver, 3);
 }
 
 static inline void set_hd_op_result(struct hd_operation_desc_t* op, int result)
