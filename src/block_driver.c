@@ -18,30 +18,30 @@ int block_driver_register(struct block_driver_desc_t* driver, uint16_t main_driv
     return 0;
 }
 
-int block_driver_read_blocks(struct block_buffer_desc_t* start, size_t count, int timeout)
+int block_driver_read_blocks(struct block_buffer_desc_t* block_buffers[], size_t count, int timeout)
 {
-    if(block_drivers[start->main_driver] == NULL)
+    if(block_drivers[block_buffers[0]->main_driver] == NULL)
     {
         return -1;
     }
-    if(block_drivers[start->main_driver]->read_blocks == NULL)
+    if(block_drivers[block_buffers[0]->main_driver]->read_blocks == NULL)
     {
         return -1;
     }
-    return block_drivers[start->main_driver]->read_blocks(start, count, timeout);
+    return block_drivers[block_buffers[0]->main_driver]->read_blocks(block_buffers, count, timeout);
 }
 
-int block_driver_write_blocks(const struct block_buffer_desc_t* start, size_t count, int timeout)
+int block_driver_write_blocks(struct block_buffer_desc_t* block_buffers[], size_t count, int timeout)
 {
-    if(block_drivers[start->main_driver] == NULL)
+    if(block_drivers[block_buffers[0]->main_driver] == NULL)
     {
         return -1;
     }
-    if(block_drivers[start->main_driver]->write_blocks == NULL)
+    if(block_drivers[block_buffers[0]->main_driver]->write_blocks == NULL)
     {
         return -1;
     }
-    return block_drivers[start->main_driver]->write_blocks(start, count, timeout);
+    return block_drivers[block_buffers[0]->main_driver]->write_blocks(block_buffers, count, timeout);
 }
 
 size_t block_driver_get_max_read(uint16_t main_driver)

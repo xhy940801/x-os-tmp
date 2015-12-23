@@ -1,4 +1,4 @@
-CFLAGS=-Wall -O2 -m32 -std=c99 -nostartfiles -nostdlib -nodefaultlibs -static -Iinc
+CFLAGS=-Wall -Werror -O2 -m32 -std=c99 -nostartfiles -nostdlib -nodefaultlibs -static -Iinc
 EXCLUDE=src/bootsect.s src/setup.s src/head.s
 CSOURCE=$(filter-out $(EXCLUDE),$(wildcard src/*.c))
 ASMSOURCE=$(filter-out $(EXCLUDE),$(wildcard src/*.s))

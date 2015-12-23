@@ -52,7 +52,10 @@ void* tslab_malloc(size_t size)
             slab_head += size;
             snode->next = (struct slab_list_node_t*) slab_head;
         }
+#pragma GCC diagnostic push
+#pragma GCC diagnostic warning "-Wmaybe-uninitialized"
         snode->next = NULL;
+#pragma GCC diagnostic pop
         kassert(page_start_pos(slab_head) == ((void*) pdesc));
         kassert(page_start_pos(slab_head + size) == ((void*) (((char*) pdesc) + 4096)));
         slab_slot_descs[n].free_slab_head = (struct slab_list_node_t*) pdesc->slab;

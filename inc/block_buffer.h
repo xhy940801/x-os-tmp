@@ -13,7 +13,6 @@
 
 enum BLKBUFFER_FLAGS
 {
-    BLKBUFFER_FLAG_INQUEUE  = 1,
     BLKBUFFER_FLAG_UNSYNC   = 2,
     BLKBUFFER_FLAG_DIRTY    = 4,
     BLKBUFFER_FLAG_LOCK     = 16,
@@ -55,5 +54,5 @@ void init_block_buffer_module();
 struct block_buffer_desc_t* get_block_buffer(uint16_t main_driver, uint16_t sub_driver, size_t block_no, int timeout);
 void release_block_buffer(struct block_buffer_desc_t* blk);
 struct block_buffer_desc_t* block_buffer_get_next_node(struct block_buffer_desc_t* node);
-struct block_buffer_desc_t* flush_block_buffer(struct block_buffer_desc_t* start, int timeout);
-struct block_buffer_desc_t* sync_block_buffer(struct block_buffer_desc_t* start, int timeout);
+int flush_block_buffer(struct block_buffer_desc_t* start, int timeout);
+int sync_block_buffer(struct block_buffer_desc_t* start, int timeout);

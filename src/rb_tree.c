@@ -209,8 +209,11 @@ void rb_tree_remove(struct rb_tree_head_t* head, struct rb_tree_node_t* node)
         node = node->right;
     }
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic warning "-Wmaybe-uninitialized"
     if(onodec == _RB_TREE_BLACK)
         rb_rmfix(head->pre_root.left, node);
+#pragma GCC diagnostic pop
 }
 
 void rb_tree_rebalance(struct rb_tree_node_t* root, struct rb_tree_node_t* node)

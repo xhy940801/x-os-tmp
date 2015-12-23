@@ -33,7 +33,7 @@ enum hd_elevator_state
 struct hd_operation_desc_t
 {
     struct list_node_t node;
-    struct block_buffer_desc_t* start;
+    struct block_buffer_desc_t** block_buffers;
     size_t count;
     struct process_info_t* proc;
     enum hd_operation_type op_type;
@@ -41,7 +41,7 @@ struct hd_operation_desc_t
 
 struct hd_operation_append_desc_t
 {
-    struct block_buffer_desc_t* start;
+    struct block_buffer_desc_t** block_buffers;
     size_t count;
     int result;
     enum hd_operation_type op_type;
@@ -283,15 +283,13 @@ int reset_hd_partition_table(struct hd_info_t* info)
     return hd_pio_writeoneblock(info, 0, buf);
 }
 
-int hd_irq_start_read(struct hd_info_t* hd_info, struct block_buffer_desc_t* start, size_t count)
+int hd_irq_start_read(struct hd_info_t* hd_info, struct block_buffer_desc_t* block_buffers[], size_t count)
 {
-    struct block_buffer_desc_t* end = start;
     for(size_t i = 0; i < count; ++i)
     {
-        hd_info->bmr.prdt[i].physical_address = get_physical_addr((uint32_t) end->buffer);
+        hd_info->bmr.prdt[i].physical_address = get_physical_addr((uint32_t) block_buffers[i]->buffer);
         hd_info->bmr.prdt[i].byte_count = 4096;
         hd_info->bmr.prdt[i].eot = 0x0000;
-        end = block_buffer_get_next_node(end);
     }
     hd_info->bmr.prdt[count - 1].eot = 0x8000;
 
@@ -299,7 +297,7 @@ int hd_irq_start_read(struct hd_info_t* hd_info, struct block_buffer_desc_t* sta
     _outb(hd_info->bmr.bmr_base_port + PORT_BMI_M_COMMAND, 0x80);
     _outb(hd_info->bmr.bmr_base_port + PORT_BMI_M_STATUS, 0x06);
 
-    uint32_t lba = start->block_no << 2;
+    uint32_t lba = block_buffers[0]->block_no << 2;
     _outb(hd_info->baseport + PORT_DRIVERSELECT, 0xe0 | hd_info->slavebit | ((lba >> 24) & 0x0f));
     _outb(hd_info->baseport + PORT_SELECTORCOUNT, count << 2);
     _outb(hd_info->baseport + PORT_LBALO, lba & 0xff);
@@ -311,15 +309,13 @@ int hd_irq_start_read(struct hd_info_t* hd_info, struct block_buffer_desc_t* sta
     return 0;
 }
 
-int hd_irq_start_write(struct hd_info_t* hd_info, struct block_buffer_desc_t* start, size_t count)
+int hd_irq_start_write(struct hd_info_t* hd_info, struct block_buffer_desc_t* block_buffers[], size_t count)
 {
-    struct block_buffer_desc_t* end = start;
     for(size_t i = 0; i < count; ++i)
     {
-        hd_info->bmr.prdt[i].physical_address = get_physical_addr((uint32_t) end->buffer);
+        hd_info->bmr.prdt[i].physical_address = get_physical_addr((uint32_t) block_buffers[i]->buffer);
         hd_info->bmr.prdt[i].byte_count = 4096;
         hd_info->bmr.prdt[i].eot = 0x0000;
-        end = block_buffer_get_next_node(end);
     }
     hd_info->bmr.prdt[count - 1].eot = 0x8000;
 
@@ -327,7 +323,7 @@ int hd_irq_start_write(struct hd_info_t* hd_info, struct block_buffer_desc_t* st
     _outb(hd_info->bmr.bmr_base_port + PORT_BMI_M_COMMAND, 0x00);
     _outb(hd_info->bmr.bmr_base_port + PORT_BMI_M_STATUS, 0x06);
 
-    uint32_t lba = start->block_no << 2;
+    uint32_t lba = block_buffers[0]->block_no << 2;
     _outb(hd_info->baseport + PORT_DRIVERSELECT, 0xe0 | hd_info->slavebit | ((lba >> 24) & 0x0f));
     _outb(hd_info->baseport + PORT_SELECTORCOUNT, count << 2);
     _outb(hd_info->baseport + PORT_LBALO, lba & 0xff);
@@ -341,12 +337,12 @@ int hd_irq_start_write(struct hd_info_t* hd_info, struct block_buffer_desc_t* st
 
 int hd_blocks_op(struct hd_operation_append_desc_t* hd_op_append, int timeout)
 {
-    struct block_buffer_desc_t* start = hd_op_append->start;
+    struct block_buffer_desc_t** block_buffers = hd_op_append->block_buffers;
     size_t count = hd_op_append->count;
     kassert(count < 32);
     kassert(hd_op_append->op_type == HD_OPERATION_WRITE || hd_op_append->op_type == HD_OPERATION_READ);
     
-    struct hd_info_t* hd_info = &hd_infos[start->sub_driver >> 2];
+    struct hd_info_t* hd_info = &hd_infos[block_buffers[0]->sub_driver >> 2];
     last_op_hd = hd_info;
     lock_task();
     if(circular_list_is_empty(&hd_info->elevator.free_head))
@@ -371,7 +367,7 @@ int hd_blocks_op(struct hd_operation_append_desc_t* hd_op_append, int timeout)
     {
         struct hd_operation_desc_t* free_node = parentof(hd_info->elevator.free_head.next, struct hd_operation_desc_t, node);
         circular_list_remove(&free_node->node);
-        free_node->start = start;
+        free_node->block_buffers = block_buffers;
         free_node->count = count;
         free_node->proc = cur_process;
         if(hd_info->elevator.state == HD_ELEVATOR_UP)
@@ -381,9 +377,9 @@ int hd_blocks_op(struct hd_operation_append_desc_t* hd_op_append, int timeout)
                 kassert(circular_list_is_empty(&hd_info->elevator.down_head));
                 int res;
                 if(hd_op_append->op_type == HD_OPERATION_WRITE)
-                    res = hd_irq_start_write(hd_info, start, count);
+                    res = hd_irq_start_write(hd_info, block_buffers, count);
                 else
-                    res = hd_irq_start_read(hd_info, start, count);
+                    res = hd_irq_start_read(hd_info, block_buffers, count);
                 if(res < 0)
                 {
                     unlock_task();
@@ -401,22 +397,22 @@ int hd_blocks_op(struct hd_operation_append_desc_t* hd_op_append, int timeout)
                     unlock_task();
                     return -1;
                 }
-                if(start->block_no >
+                if(block_buffers[0]->block_no >
                     parentof(
                         hd_info->elevator.up_head.next,
                         struct hd_operation_desc_t,
                         node
-                    )->start->block_no
+                    )->block_buffers[0]->block_no
                 )
                 {
                     struct list_node_t* c_node = hd_info->elevator.up_head.next;
                     while(
                         c_node->next != &hd_info->elevator.up_head &&
-                        start->block_no > parentof(
+                        block_buffers[0]->block_no > parentof(
                             c_node->next,
                             struct hd_operation_desc_t,
                             node
-                        )->start->block_no
+                        )->block_buffers[0]->block_no
                     )
                         c_node = c_node->next;
                     circular_list_insert(c_node->pre, &free_node->node);
@@ -426,11 +422,11 @@ int hd_blocks_op(struct hd_operation_append_desc_t* hd_op_append, int timeout)
                     struct list_node_t* c_node = hd_info->elevator.down_head.next;
                     while(
                         c_node != &hd_info->elevator.down_head &&
-                        start->block_no < parentof(
+                        block_buffers[0]->block_no < parentof(
                             c_node,
                             struct hd_operation_desc_t,
                             node
-                        )->start->block_no
+                        )->block_buffers[0]->block_no
                     )
                         c_node = c_node->next;
                     circular_list_insert(c_node->pre, &free_node->node);
@@ -449,9 +445,9 @@ int hd_blocks_op(struct hd_operation_append_desc_t* hd_op_append, int timeout)
                 kassert(circular_list_is_empty(&hd_info->elevator.up_head));
                 int res;
                 if(hd_op_append->op_type == HD_OPERATION_WRITE)
-                    res = hd_irq_start_write(hd_info, start, count);
+                    res = hd_irq_start_write(hd_info, block_buffers, count);
                 else
-                    res = hd_irq_start_read(hd_info, start, count);
+                    res = hd_irq_start_read(hd_info, block_buffers, count);
                 if(res < 0)
                 {
                     unlock_task();
@@ -469,22 +465,22 @@ int hd_blocks_op(struct hd_operation_append_desc_t* hd_op_append, int timeout)
                     unlock_task();
                     return -1;
                 }
-                if(start->block_no <
+                if(block_buffers[0]->block_no <
                     parentof(
                         hd_info->elevator.down_head.next,
                         struct hd_operation_desc_t,
                         node
-                    )->start->block_no
+                    )->block_buffers[0]->block_no
                 )
                 {
                     struct list_node_t* c_node = hd_info->elevator.down_head.next;
                     while(
                         c_node->next != &hd_info->elevator.down_head &&
-                        start->block_no < parentof(
+                        block_buffers[0]->block_no < parentof(
                             c_node->next,
                             struct hd_operation_desc_t,
                             node
-                        )->start->block_no
+                        )->block_buffers[0]->block_no
                     )
                         c_node = c_node->next;
                     circular_list_insert(c_node->pre, &free_node->node);
@@ -494,11 +490,11 @@ int hd_blocks_op(struct hd_operation_append_desc_t* hd_op_append, int timeout)
                     struct list_node_t* c_node = hd_info->elevator.up_head.next;
                     while(
                         c_node != &hd_info->elevator.up_head &&
-                        start->block_no > parentof(
+                        block_buffers[0]->block_no > parentof(
                             c_node,
                             struct hd_operation_desc_t,
                             node
-                        )->start->block_no
+                        )->block_buffers[0]->block_no
                     )
                         c_node = c_node->next;
                     circular_list_insert(c_node->pre, &free_node->node);
@@ -522,10 +518,10 @@ int hd_blocks_op(struct hd_operation_append_desc_t* hd_op_append, int timeout)
     return hd_op_append->result;
 }
 
-int hd_read_blocks(struct block_buffer_desc_t* start, size_t count, int timeout)
+int hd_read_blocks(struct block_buffer_desc_t* block_buffers[], size_t count, int timeout)
 {
     struct hd_operation_append_desc_t hd_op_append;
-    hd_op_append.start = start;
+    hd_op_append.block_buffers = block_buffers;
     hd_op_append.count = count;
     hd_op_append.result = -2;
     hd_op_append.op_type = HD_OPERATION_READ;
@@ -533,10 +529,10 @@ int hd_read_blocks(struct block_buffer_desc_t* start, size_t count, int timeout)
     return hd_blocks_op(&hd_op_append, timeout);
 }
 
-int hd_write_blocks(struct block_buffer_desc_t* start, size_t count, int timeout)
+int hd_write_blocks(struct block_buffer_desc_t* block_buffers[], size_t count, int timeout)
 {
     struct hd_operation_append_desc_t hd_op_append;
-    hd_op_append.start = start;
+    hd_op_append.block_buffers = block_buffers;
     hd_op_append.count = count;
     hd_op_append.result = -2;
     hd_op_append.op_type = HD_OPERATION_WRITE;
@@ -653,16 +649,16 @@ void do_hd_irq()
     {
         uint32_t lba = get_ata_lba(hd_info->baseport);
         size_t block_no = lba >> 2;
-        kassert(block_no >= cur_op->start->block_no);
-        if(block_no == cur_op->start->block_no)
+        kassert(block_no >= cur_op->block_buffers[0]->block_no);
+        if(block_no == cur_op->block_buffers[0]->block_no)
             set_hd_op_result(cur_op, -1);
         else
-            set_hd_op_result(cur_op, block_no - cur_op->start->block_no);
+            set_hd_op_result(cur_op, block_no - cur_op->block_buffers[0]->block_no);
     }
     else
     {
         uint32_t lba = get_ata_lba(hd_info->baseport);
-        kassert(lba == (cur_op->start->block_no << 2) + (cur_op->count << 2));
+        kassert(lba == (cur_op->block_buffers[0]->block_no << 2) + (cur_op->count << 2));
         set_hd_op_result(cur_op, cur_op->count);
     }
 
@@ -672,9 +668,9 @@ void do_hd_irq()
         kassert(next_op->op_type == HD_OPERATION_READ || next_op->op_type == HD_OPERATION_WRITE);
         kwakeup(next_op->proc);
         if(next_op->op_type == HD_OPERATION_READ)
-            res = hd_irq_start_read(hd_info, next_op->start, next_op->count);
+            res = hd_irq_start_read(hd_info, next_op->block_buffers, next_op->count);
         else
-            res = hd_irq_start_write(hd_info, next_op->start, next_op->count);
+            res = hd_irq_start_write(hd_info, next_op->block_buffers, next_op->count);
         if(res < 0)
         {
             in_sched_queue(next_op->proc);
