@@ -610,6 +610,7 @@ static inline uint32_t get_ata_lba(int baseport)
 
 void do_hd_irq()
 {
+    v_lock_task();
     struct hd_info_t* hd_info = last_op_hd;
     int dma_status = _inb(hd_info->bmr.bmr_base_port + PORT_BMI_M_STATUS);
     int ata_status = _inb(hd_info->baseport + PORT_CMDSTATUS);
@@ -686,6 +687,7 @@ void do_hd_irq()
         else
             kuninterruptwait(next_op->proc);
     }
+    v_unlock_task();
 }
 
 /*struct prdt_desc_t* prdt;
