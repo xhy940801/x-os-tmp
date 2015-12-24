@@ -7,7 +7,7 @@
 #include "panic.h"
 #include "wait.h"
 #include "vfs.h"
-
+void sys_test();
 void sys_call();
 
 struct syscall_desc_t
@@ -28,6 +28,7 @@ void init_syscall_module()
 
     syscall_register(0x10, sys_write);
     syscall_register(0x11, sys_read);
+    syscall_register(0x50, sys_test);
 }
 
 int sys_call_fail(int n)

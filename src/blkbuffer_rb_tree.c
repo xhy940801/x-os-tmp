@@ -16,7 +16,7 @@ static inline int blk_less2(struct block_buffer_desc_t* blk1, struct block_buffe
 
 struct rb_tree_node_t* blkbuffer_rb_tree_find(struct rb_tree_head_t* head, uint16_t main_driver, uint16_t sub_driver, size_t block_no)
 {
-    uint32_t driver_type = sub_driver | main_driver >> 16;
+    uint32_t driver_type = sub_driver | main_driver << 16;
     struct rb_tree_node_t* p = head->pre_root.left;
     while(p != nil)
     {
@@ -31,46 +31,10 @@ struct rb_tree_node_t* blkbuffer_rb_tree_find(struct rb_tree_head_t* head, uint1
     return NULL;
 }
 
-
-struct rb_tree_node_t* blkbuffer_rb_tree_next(struct rb_tree_head_t* head, struct rb_tree_node_t* node)
-{
-    if(node->right != nil)
-    {
-        node = node->right;
-        while(node->left != nil)
-            node = node->left;
-        return node;
-    }
-    while(node != head->pre_root.left)
-    {
-        if(node->parent->left == node)
-            return node->parent;
-        node = node->parent;
-    }
-    return NULL;
-}
-
-
-struct rb_tree_node_t* blkbuffer_rb_tree_prev(struct rb_tree_head_t* head, struct rb_tree_node_t* node)
-{
-    if(node->left != nil)
-    {
-        node = node->left;
-        while(node->right != nil)
-            node = node->right;
-        return node;
-    }
-    while(node != head->pre_root.left)
-    {
-        if(node->parent->right == node)
-            return node->parent;
-        node = node->parent;
-    }
-    return NULL;
-}
-
 void blkbuffer_rb_tree_insert(struct rb_tree_head_t* head, struct rb_tree_node_t* node)
 {
+    node->left = nil;
+    node->right = nil;
     struct rb_tree_node_t* p = head->pre_root.left;
     while (1)
     {
@@ -99,5 +63,4 @@ void blkbuffer_rb_tree_insert(struct rb_tree_head_t* head, struct rb_tree_node_t
     }
     node->parent = p;
     rb_tree_rebalance(head->pre_root.left, node);
-
 }

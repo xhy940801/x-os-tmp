@@ -89,6 +89,7 @@ struct hd_info_t
     size_t len;
     struct hd_elevator_desc_t elevator;
     struct bmr_info_t bmr;
+    struct hd_subdriver_desc_t hd_subdrivers[4];
 };
 
 struct lba48_partition_table_desc_t
@@ -103,7 +104,6 @@ struct lba48_partition_table_desc_t
     uint32_t lenlo;
 };
 
-static struct hd_subdriver_desc_t hd_subdrivers[4];
 static struct hd_info_t hd_infos[1];
 static struct hd_info_t* last_op_hd;
 static struct hd_info_t* last_op_hd;
@@ -230,7 +230,7 @@ int load_hd_params(struct hd_info_t* info)
     return 0;
 }
 
-int load_hd_partition_table(struct hd_info_t* info, struct hd_subdriver_desc_t* start)
+int load_hd_partition_table(struct hd_info_t* info)
 {
     char buf[512];
     int ret = hd_pio_readoneblock(info, 0, buf);
@@ -248,10 +248,10 @@ int load_hd_partition_table(struct hd_info_t* info, struct hd_subdriver_desc_t* 
             continue;
         if(table->lenhi != 0)
             continue;
-        start[i].baseport = info->baseport;
-        start[i].slavebit = info->slavebit;
-        start[i].startlba = table->lbalo;
-        start[i].len = table->lenlo;
+        info->hd_subdrivers[i].baseport = info->baseport;
+        info->hd_subdrivers[i].slavebit = info->slavebit;
+        info->hd_subdrivers[i].startlba = table->lbalo;
+        info->hd_subdrivers[i].len = table->lenlo;
         ++pc;
     }
     return pc;
@@ -271,7 +271,7 @@ int reset_hd_partition_table(struct hd_info_t* info)
     table1->lbahi = 0;
     table1->lenhi = 0;
     table1->lbalo = 0;
-    table1->lenlo = 2 * 1024 * 1024;
+    table1->lenlo = 2 * 1024;
 
     struct lba48_partition_table_desc_t* table2 = (struct lba48_partition_table_desc_t*) (buf + 446 + 16);
     table2->flags = 0x01;
@@ -279,8 +279,8 @@ int reset_hd_partition_table(struct hd_info_t* info)
     table2->signature2 = 0xeb;
     table2->lbahi = 0;
     table2->lenhi = 0;
-    table2->lbalo = 2 * 1024 * 1024;
-    table2->lenlo = 20 * 1024 * 1024 - 2 * 1024 * 1024;
+    table2->lbalo = 2 * 1024;
+    table2->lenlo = 20 * 1024 - 2 * 1024;
     return hd_pio_writeoneblock(info, 0, buf);
 }
 
@@ -295,18 +295,17 @@ int hd_irq_start_read(struct hd_info_t* hd_info, struct block_buffer_desc_t* blo
     hd_info->bmr.prdt[count - 1].eot = 0x8000;
 
     _outd(hd_info->bmr.bmr_base_port + PORT_BMI_M_PRDTADDR, hd_info->bmr.prdt_physical_address);
-    _outb(hd_info->bmr.bmr_base_port + PORT_BMI_M_COMMAND, 0x80);
     _outb(hd_info->bmr.bmr_base_port + PORT_BMI_M_STATUS, 0x06);
 
-    uint32_t lba = block_buffers[0]->block_no << 2;
+    uint32_t lba = (block_buffers[0]->block_no << 2) + hd_info->hd_subdrivers[block_buffers[0]->sub_driver & 0x03].startlba;
     _outb(hd_info->baseport + PORT_DRIVERSELECT, 0xe0 | hd_info->slavebit | ((lba >> 24) & 0x0f));
-    _outb(hd_info->baseport + PORT_SELECTORCOUNT, count << 2);
+    _outb(hd_info->baseport + PORT_SELECTORCOUNT, count << 3);
     _outb(hd_info->baseport + PORT_LBALO, lba & 0xff);
     _outb(hd_info->baseport + PORT_LBAMID, ((lba >> 8) & 0xff));
     _outb(hd_info->baseport + PORT_LBAHI, ((lba >> 16) & 0xff));
     _outb(hd_info->baseport + PORT_CMDSTATUS, 0xc8);
 
-    _outb(hd_info->bmr.bmr_base_port + PORT_BMI_M_COMMAND, 0x01);
+    _outb(hd_info->bmr.bmr_base_port + PORT_BMI_M_COMMAND, 0x09);
     return 0;
 }
 
@@ -321,12 +320,11 @@ int hd_irq_start_write(struct hd_info_t* hd_info, struct block_buffer_desc_t* bl
     hd_info->bmr.prdt[count - 1].eot = 0x8000;
 
     _outd(hd_info->bmr.bmr_base_port + PORT_BMI_M_PRDTADDR, hd_info->bmr.prdt_physical_address);
-    _outb(hd_info->bmr.bmr_base_port + PORT_BMI_M_COMMAND, 0x00);
     _outb(hd_info->bmr.bmr_base_port + PORT_BMI_M_STATUS, 0x06);
 
-    uint32_t lba = block_buffers[0]->block_no << 2;
+    uint32_t lba = (block_buffers[0]->block_no << 2) + hd_info->hd_subdrivers[block_buffers[0]->sub_driver & 0x03].startlba;
     _outb(hd_info->baseport + PORT_DRIVERSELECT, 0xe0 | hd_info->slavebit | ((lba >> 24) & 0x0f));
-    _outb(hd_info->baseport + PORT_SELECTORCOUNT, count << 2);
+    _outb(hd_info->baseport + PORT_SELECTORCOUNT, count << 3);
     _outb(hd_info->baseport + PORT_LBALO, lba & 0xff);
     _outb(hd_info->baseport + PORT_LBAMID, ((lba >> 8) & 0xff));
     _outb(hd_info->baseport + PORT_LBAHI, ((lba >> 16) & 0xff));
@@ -510,7 +508,7 @@ int hd_blocks_op(struct hd_operation_append_desc_t* hd_op_append, int timeout)
     }
     schedule();
     unlock_task();
-    kassert(hd_op_append->result == -2 || hd_op_append->result == -1 || hd_op_append->result == 0);
+    kassert(hd_op_append->result == -2 || hd_op_append->result == -1 || hd_op_append->result > 0);
     if(hd_op_append->result == -2)
     {
         cur_process->last_errno = ETIMEDOUT;
@@ -614,6 +612,7 @@ void do_hd_irq()
     struct hd_info_t* hd_info = last_op_hd;
     int dma_status = _inb(hd_info->bmr.bmr_base_port + PORT_BMI_M_STATUS);
     int ata_status = _inb(hd_info->baseport + PORT_CMDSTATUS);
+    int ata_error = _inb(hd_info->baseport + 1);
     struct hd_operation_desc_t* cur_op;
     struct hd_operation_desc_t* next_op;
     _outb(hd_info->bmr.bmr_base_port + PORT_BMI_M_COMMAND, 0x00);
@@ -622,7 +621,7 @@ void do_hd_irq()
     {
         kassert(!circular_list_is_empty(&hd_info->elevator.up_head));
         cur_op = parentof(hd_info->elevator.up_head.next, struct hd_operation_desc_t, node);
-        circular_list_remove(&hd_info->elevator.up_head);
+        circular_list_remove(&cur_op->node);
         if(circular_list_is_empty(&hd_info->elevator.up_head))
         {
             hd_info->elevator.state = HD_ELEVATOR_DOWN;
@@ -638,7 +637,7 @@ void do_hd_irq()
     {
         kassert(!circular_list_is_empty(&hd_info->elevator.down_head));
         cur_op = parentof(hd_info->elevator.down_head.next, struct hd_operation_desc_t, node);
-        circular_list_remove(&hd_info->elevator.down_head);
+        circular_list_remove(&cur_op->node);
         if(circular_list_is_empty(&hd_info->elevator.down_head))
         {
             hd_info->elevator.state = HD_ELEVATOR_UP;
@@ -653,9 +652,12 @@ void do_hd_irq()
 
     kwakeup(cur_op->proc);
     in_sched_queue(cur_op->proc);
+    printk("status [%u] [%u] [%u]\n", dma_status, ata_status, ata_error);
     if(dma_status & 0x02 || ata_status & 0x01)
     {
         uint32_t lba = get_ata_lba(hd_info->baseport);
+        kassert(lba >= last_op_hd->hd_subdrivers[cur_op->block_buffers[0]->sub_driver & 0x3].startlba);
+        lba -= last_op_hd->hd_subdrivers[cur_op->block_buffers[0]->sub_driver & 0x3].startlba;
         size_t block_no = lba >> 2;
         kassert(block_no >= cur_op->block_buffers[0]->block_no);
         if(block_no == cur_op->block_buffers[0]->block_no)
@@ -666,7 +668,9 @@ void do_hd_irq()
     else
     {
         uint32_t lba = get_ata_lba(hd_info->baseport);
-        kassert(lba == (cur_op->block_buffers[0]->block_no << 2) + (cur_op->count << 2));
+        kassert(lba >= last_op_hd->hd_subdrivers[cur_op->block_buffers[0]->sub_driver & 0x3].startlba);
+        lba -= last_op_hd->hd_subdrivers[cur_op->block_buffers[0]->sub_driver & 0x3].startlba;
+        kassert(lba == (cur_op->block_buffers[0]->block_no << 2) + (cur_op->count << 3));
         set_hd_op_result(cur_op, cur_op->count);
     }
 
@@ -803,7 +807,6 @@ void on_hd_interrupt_request();
 
 void init_hd_driver_module()
 {
-    _memset(hd_subdrivers, 0, sizeof(hd_subdrivers));
     init_hd_info(&hd_infos[0], 0x01f0, 0);
     int ret = load_hd_params(&hd_infos[0]);
     if(ret < 0)
@@ -811,13 +814,13 @@ void init_hd_driver_module()
     printk("hd0 lba len: %u blk = %u Byte = %u MB\n", hd_infos[0].len, hd_infos[0].len * 512, hd_infos[0].len * 512 / 1024 / 1024);
     ret = reset_hd_partition_table(&hd_infos[0]);
     kassert(ret == 0);
-    int pc = load_hd_partition_table(&hd_infos[0], hd_subdrivers);
+    int pc = load_hd_partition_table(&hd_infos[0]);
     if(pc < 0)
         panic("load partition fail\n");
     printk("has %d partition\n", pc);
-    for(size_t i = 0; i < sizeof(hd_subdrivers) / sizeof(hd_subdrivers[0]); ++i)
-        if(hd_subdrivers[i].baseport != 0)
-            printk("partition %d: startlba [%u] len [%u]\n", i, hd_subdrivers[i].startlba, hd_subdrivers[i].len);
+    for(size_t i = 0; i < 4; ++i)
+        if(hd_infos[0].hd_subdrivers[i].baseport != 0)
+            printk("partition %d: startlba [%u] len [%u]\n", i, hd_infos[0].hd_subdrivers[i].startlba, hd_infos[0].hd_subdrivers[i].len);
     init_hd_pci_info(&hd_infos[0]);
     clear_8259_mask(14);
     setup_intr_desc(0x2e, on_hd_interrupt_request, 0);

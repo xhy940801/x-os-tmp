@@ -13,22 +13,17 @@ void putstr(const char* str)
 void user_do()
 {
     char str1[] = "hehe\n";
-    char str2[] = "subAAAAAA\n";
-    char str3[] = "mai22333333333333333333333\n";
+    //char str2[] = "subAAAAAA\n";
+    //char str3[] = "mai22333333333333333333333\n";
     volatile int ret;
     putstr(str1);
     ret = fork();
     if(ret == 0)
     {
-        ret = fork();
-        putstr(str2);
-        __asm__ volatile("mov $255, %%eax":::"eax");
-        while(1);
+        syscall0(0x50);
     }
     else
     {
-        //sched_yield();
-        putstr(str3);
         while(1);
     }
     while(1);

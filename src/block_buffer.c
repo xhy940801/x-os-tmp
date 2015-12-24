@@ -8,11 +8,12 @@
 #include "sched.h"
 #include "blkbuffer_rb_tree.h"
 #include "task_locker.h"
+#include "printk.h"
 
 static struct block_buffer_manager_info_t blk_buffer_manager;
 static struct block_buffer_desc_t blank_buffer;
 
-static size_t get_batch_block_buffer(struct block_buffer_desc_t* start, uint32_t flags, struct block_buffer_desc_t* block_buffers[] , size_t max_len)
+static size_t get_batch_block_buffer(struct block_buffer_desc_t* start, uint32_t flags, uint32_t tflags, struct block_buffer_desc_t* block_buffers[] , size_t max_len)
 {
     lock_task();
     if(!(start->flags & flags) || start->flags & BLKBUFFER_FLAG_LOCK)
@@ -35,7 +36,6 @@ static size_t get_batch_block_buffer(struct block_buffer_desc_t* start, uint32_t
                 circular_list_is_inlist(&blk_buffer_manager.sync_list_head, &start->list_node) ||
                 circular_list_is_inlist(&blk_buffer_manager.dirty_list_head, &start->list_node)
             );
-
             circular_list_remove(&start->list_node);
             ++rml_count;
         }
@@ -44,25 +44,32 @@ static size_t get_batch_block_buffer(struct block_buffer_desc_t* start, uint32_t
         kassert(!circular_list_is_inlist(&blk_buffer_manager.sync_list_head, &start->list_node));
         kassert(!circular_list_is_inlist(&blk_buffer_manager.dirty_list_head, &start->list_node));
 
-        start->flags = BLKBUFFER_FLAG_FLUSHING | BLKBUFFER_FLAG_LOCK;
+        start->flags = tflags | BLKBUFFER_FLAG_LOCK;
         ++start->used_count;
 
         struct block_buffer_desc_t* next = parentof(
-            blkbuffer_rb_tree_next(&blk_buffer_manager.rb_tree_head, &start->rb_tree_node),
+            rb_tree_next(&blk_buffer_manager.rb_tree_head, &start->rb_tree_node),
             struct block_buffer_desc_t,
             rb_tree_node
         );
         if(
+            next == NULL ||
             start->driver_type != next->driver_type ||
             start->block_no + 1 != next->block_no ||
             !(next->flags & flags) ||
             next->flags & BLKBUFFER_FLAG_LOCK
         )
+        {
+            ++i;
             break;
+        }
         start = next;
     }
-    int _res = ksemaphore_down(&blk_buffer_manager.inlist_sem, rml_count, -1);
-    kassert(_res >= 0);
+    if(rml_count > 0)
+    {
+        int _res = ksemaphore_down(&blk_buffer_manager.inlist_sem, rml_count, -1);
+        kassert(_res >= 0);
+    }
     unlock_task();
     return i;
 }
@@ -71,14 +78,14 @@ ssize_t flush_block_buffer(struct block_buffer_desc_t* start, int timeout)
 {
     size_t max_len = block_driver_get_max_write(start->main_driver);
     struct block_buffer_desc_t* block_buffers[max_len];
-    size_t len = get_batch_block_buffer(start, BLKBUFFER_FLAG_DIRTY, block_buffers, max_len);
+    size_t len = get_batch_block_buffer(start, BLKBUFFER_FLAG_DIRTY, BLKBUFFER_FLAG_FLUSHING, block_buffers, max_len);
     if(len == 0)
         return -1;
     ssize_t blk_write_ret = block_driver_write_blocks(block_buffers, len, timeout);
 
     size_t twc = blk_write_ret < 0 ? 0 : (size_t) blk_write_ret;
     size_t i = 0;
-    size_t in_sync_list_count = 0;
+    size_t in_list_count = 0;
 
     lock_task();
     for(; i < twc; ++i)
@@ -93,10 +100,8 @@ ssize_t flush_block_buffer(struct block_buffer_desc_t* start, int timeout)
             if(block_buffers[i]->flags & BLKBUFFER_FLAG_DIRTY)
                 circular_list_insert(&blk_buffer_manager.dirty_list_head, &block_buffers[i]->list_node);
             else
-            {
                 circular_list_insert(&blk_buffer_manager.sync_list_head, &block_buffers[i]->list_node);
-                ++in_sync_list_count;
-            }
+            ++in_list_count;
         }
     }
 
@@ -108,25 +113,29 @@ ssize_t flush_block_buffer(struct block_buffer_desc_t* start, int timeout)
         --block_buffers[i]->used_count;
         block_buffers[i]->flags = BLKBUFFER_FLAG_DIRTY;
         if(block_buffers[i]->used_count == 0)
+        {
             circular_list_insert(&blk_buffer_manager.dirty_list_head, &block_buffers[i]->list_node);
+            ++in_list_count;
+        }
     }
-
+    ksemaphore_up(&blk_buffer_manager.inlist_sem, in_list_count);
     unlock_task();
-    return in_sync_list_count == 0 ? -1 : (ssize_t) in_sync_list_count;
+    return blk_write_ret;
 }
 
 ssize_t sync_block_buffer(struct block_buffer_desc_t* start, int timeout)
 {
     size_t max_len = block_driver_get_max_read(start->main_driver);
     struct block_buffer_desc_t* block_buffers[max_len];
-    size_t len = get_batch_block_buffer(start, BLKBUFFER_FLAG_UNSYNC, block_buffers, max_len);
+    size_t len = get_batch_block_buffer(start, BLKBUFFER_FLAG_UNSYNC, BLKBUFFER_FLAG_SYNCING, block_buffers, max_len);
+    printk("len is [%u]\n", len);
     if(len == 0)
         return -1;
-    ssize_t blk_write_ret = block_driver_read_blocks(block_buffers, len, timeout);
+    ssize_t blk_read_ret = block_driver_read_blocks(block_buffers, len, timeout);
 
-    size_t trc = blk_write_ret < 0 ? 0 : blk_write_ret;
+    size_t trc = blk_read_ret < 0 ? 0 : blk_read_ret;
     size_t i = 0;
-    size_t in_sync_list_count = 0;
+    size_t in_list_count = 0;
 
     lock_task();
     for(; i < trc; ++i)
@@ -144,10 +153,8 @@ ssize_t sync_block_buffer(struct block_buffer_desc_t* start, int timeout)
                 circular_list_insert(&blk_buffer_manager.free_list_head, &block_buffers[i]->list_node);
             }
             else
-            {
                 circular_list_insert(&blk_buffer_manager.sync_list_head, &block_buffers[i]->list_node);
-                ++in_sync_list_count;
-            }
+            ++in_list_count;
         }
     }
 
@@ -162,11 +169,12 @@ ssize_t sync_block_buffer(struct block_buffer_desc_t* start, int timeout)
         {
             rb_tree_remove(&blk_buffer_manager.rb_tree_head, &block_buffers[i]->rb_tree_node);
             circular_list_insert(&blk_buffer_manager.free_list_head, &block_buffers[i]->list_node);
+            ++in_list_count;
         }
     }
-
+    ksemaphore_up(&blk_buffer_manager.inlist_sem, in_list_count);
     unlock_task();
-    return in_sync_list_count == 0 ? -1 : (ssize_t) in_sync_list_count;
+    return blk_read_ret;
 }
 
 void init_block_buffer_module()
@@ -216,6 +224,11 @@ struct block_buffer_desc_t* get_block_buffer(uint16_t main_driver, uint16_t sub_
                     unlock_task();
                     return NULL;
                 }
+                if(circular_list_is_empty(&blk_buffer_manager.sync_list_head))
+                {
+                    unlock_task();
+                    return NULL;
+                }
                 if(timeout > 0)
                     timeout = timeout > (jiffies - cur_jiffies) ? timeout - (jiffies - cur_jiffies) : -1;
             }
@@ -234,14 +247,16 @@ struct block_buffer_desc_t* get_block_buffer(uint16_t main_driver, uint16_t sub_
         if(blk == NULL)
         {
             blk = parentof(blk_buffer_manager.free_list_head.next, struct block_buffer_desc_t, list_node);
-            circular_list_remove(&blk_buffer_manager.free_list_head);
             blk->flags = BLKBUFFER_FLAG_UNSYNC;
             blk->main_driver = main_driver;
             blk->sub_driver = sub_driver;
             blk->block_no = block_no;
+            blk->used_count = 0;
             blkbuffer_rb_tree_insert(&blk_buffer_manager.rb_tree_head, &blk->rb_tree_node);
         }
     }
+    if(blk->used_count == 0)
+        circular_list_remove(&blk->list_node);
     blk->op_time = jiffies;
     ++blk->used_count;
     unlock_task();
@@ -266,11 +281,29 @@ void release_block_buffer(struct block_buffer_desc_t* blk)
     }
 }
 
-struct block_buffer_desc_t* block_buffer_get_next_node(struct block_buffer_desc_t* node)
+void sys_test()
 {
-    return parentof(
-        blkbuffer_rb_tree_next(&(blk_buffer_manager.rb_tree_head), &(node->rb_tree_node)),
-        struct block_buffer_desc_t,
-        rb_tree_node
-    );
+    struct block_buffer_desc_t* blk = get_block_buffer(3, 1, 100, 0);
+    printk("blk_state: uc [%u] flags [%u] addr [%u]\n", blk->used_count, blk->flags, blk);
+    if(blk->flags & BLKBUFFER_FLAG_UNSYNC)
+    {
+        int res = sync_block_buffer(blk, 0);
+        printk("sync_res [%d]\n", res);
+        kassert(res > 0);
+        kassert(!(blk->flags & BLKBUFFER_FLAG_UNSYNC));
+    }
+    uint32_t* data = (uint32_t*) blk->buffer;
+    printk("data[0] = %u\n", data[0]);
+    data[0] = 1968;
+    blk->flags |= BLKBUFFER_FLAG_DIRTY;
+    release_block_buffer(blk);
+
+    blk = get_block_buffer(3, 1, 100, 0);
+    printk("blk_state: uc [%u] flags [%u] addr [%u]\n", blk->used_count, blk->flags, blk);
+    data = (uint32_t*) blk->buffer;
+    printk("data[0] = %u\n", data[0]);
+    int res = flush_block_buffer(blk, 0);
+    printk("flush_res [%d]\n", res);
+    printk("blk_state: uc [%u] flags [%u]\n", blk->used_count, blk->flags);
+    release_block_buffer(blk);
 }

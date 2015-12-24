@@ -361,12 +361,13 @@ void process_cow(unsigned e_code)
 
 void process_lack_page(unsigned e_code)
 {
-    printk("e_code [%d]\n", e_code);
+    //printk("e_code [%d]\n", e_code);
     if(e_code & 0x01)
         return process_cow(e_code);
     uint32_t cr2 = _gcr2();
     //printk("cr2 [%u]\n", cr2);
     kassert(cr2 < KMEM_START);
+    kassert(cr2 > 0x100000);
     uint32_t* page_table;
     //printk("catalog [%u]\n", cur_process->catalog_table_v);
     if((cur_process->catalog_table_v[cr2 >> 22] & 0x01) == 0)

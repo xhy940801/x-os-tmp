@@ -20,3 +20,6 @@ extern struct rb_tree_node_t nil[1];
 void rb_tree_init(struct rb_tree_head_t* head, struct rb_tree_node_t* root);
 void rb_tree_remove(struct rb_tree_head_t* head, struct rb_tree_node_t* node);
 void rb_tree_rebalance(struct rb_tree_node_t* root, struct rb_tree_node_t* node);
+
+struct rb_tree_node_t* rb_tree_next(struct rb_tree_head_t* head, struct rb_tree_node_t* node);
+struct rb_tree_node_t* rb_tree_prev(struct rb_tree_head_t* head, struct rb_tree_node_t* node);

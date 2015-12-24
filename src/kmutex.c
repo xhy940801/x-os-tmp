@@ -32,7 +32,7 @@ int kmutex_lock(struct kmutex_desc_t* mutex, int timeout)
     else
         kwait(cur_process);
     schedule();
-    kassert(circular_list_is_inlist(&(mutex->head), &(cur_process->waitlist_node.node)) == 0);
+    kassert(circular_list_is_inlist(&(mutex->head), &(cur_process->waitlist_node.node)));
     if(mutex->head.next ==  &(cur_process->waitlist_node.node))
     {
         circular_list_remove(&(cur_process->waitlist_node.node));
@@ -47,7 +47,7 @@ int kmutex_lock(struct kmutex_desc_t* mutex, int timeout)
 void kmutex_unlock(struct kmutex_desc_t* mutex)
 {
     lock_task();
-    kassert(circular_list_is_inlist(&(mutex->head), &(cur_process->waitlist_node.node)) == 0);
+    kassert(circular_list_is_inlist(&(mutex->head), &(cur_process->waitlist_node.node)));
     kassert(mutex->head.next == &(cur_process->waitlist_node.node));
     circular_list_remove(&(cur_process->waitlist_node.node));
     if(mutex->head.next != &(mutex->head))
