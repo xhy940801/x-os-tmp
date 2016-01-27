@@ -18,7 +18,7 @@ struct tss_struct_t cpu0tss;
 struct process_info_t* cur_process;
 struct rb_tree_head_t pc_rb_tree_head;
 
-long jiffies;
+volatile long jiffies;
 
 static struct sched_queue_desc_t sched_queue1;
 static struct sched_queue_desc_t sched_queue2;

@@ -139,4 +139,4 @@ void sys_yield();
 
 extern struct gdt_descriptor_t _gdt[];
 extern struct process_info_t* cur_process;
-extern long jiffies;
+extern volatile long jiffies;

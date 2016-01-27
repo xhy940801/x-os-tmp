@@ -74,6 +74,38 @@ static size_t get_batch_block_buffer(struct block_buffer_desc_t* start, uint32_t
     return i;
 }
 
+int block_buffer_wait_op_finished(struct block_buffer_desc_t* start, int timeout)
+{
+    if(start->flags & BLKBUFFER_FLAG_LOCK)
+    {
+        if(timeout < 0)
+            return -1;
+        if(timeout == 0)
+        {
+            while(start->flags & BLKBUFFER_FLAG_LOCK)
+            {
+                int res = kcond_wait(&start->op_cond, (uint32_t) timeout);
+                if(res < 0)
+                    return -1;
+            }
+        }
+        else
+        {
+            while(start->flags & BLKBUFFER_FLAG_LOCK)
+            {
+                if(timeout <= 0)
+                    return -1;
+                long cur_jiffies = jiffies;
+                int res = kcond_wait(&start->op_cond, (uint32_t) timeout);
+                if(res < 0)
+                    return -1;
+                timeout -= jiffies - cur_jiffies;
+            }
+        }
+    }
+    return 0;
+}
+
 ssize_t flush_block_buffer(struct block_buffer_desc_t* start, int timeout)
 {
     size_t max_len = block_driver_get_max_write(start->main_driver);
@@ -87,7 +119,6 @@ ssize_t flush_block_buffer(struct block_buffer_desc_t* start, int timeout)
     size_t i = 0;
     size_t in_list_count = 0;
 
-    lock_task();
     for(; i < twc; ++i)
     {
         kassert(block_buffers[i]->flags & BLKBUFFER_FLAG_FLUSHING);
@@ -95,6 +126,7 @@ ssize_t flush_block_buffer(struct block_buffer_desc_t* start, int timeout)
         kassert(block_buffers[i]->used_count != 0);
         --block_buffers[i]->used_count;
         block_buffers[i]->flags = block_buffers[i]->flags & BLKBUFFER_FLAG_DIRTY ? BLKBUFFER_FLAG_DIRTY : 0;
+        kcond_broadcast(&block_buffers[i]->op_cond);
         if(block_buffers[i]->used_count == 0)
         {
             if(block_buffers[i]->flags & BLKBUFFER_FLAG_DIRTY)
@@ -119,7 +151,6 @@ ssize_t flush_block_buffer(struct block_buffer_desc_t* start, int timeout)
         }
     }
     ksemaphore_up(&blk_buffer_manager.inlist_sem, in_list_count);
-    unlock_task();
     return blk_write_ret;
 }
 
@@ -128,7 +159,6 @@ ssize_t sync_block_buffer(struct block_buffer_desc_t* start, int timeout)
     size_t max_len = block_driver_get_max_read(start->main_driver);
     struct block_buffer_desc_t* block_buffers[max_len];
     size_t len = get_batch_block_buffer(start, BLKBUFFER_FLAG_UNSYNC, BLKBUFFER_FLAG_SYNCING, block_buffers, max_len);
-    printk("len is [%u]\n", len);
     if(len == 0)
         return -1;
     ssize_t blk_read_ret = block_driver_read_blocks(block_buffers, len, timeout);
@@ -137,7 +167,6 @@ ssize_t sync_block_buffer(struct block_buffer_desc_t* start, int timeout)
     size_t i = 0;
     size_t in_list_count = 0;
 
-    lock_task();
     for(; i < trc; ++i)
     {
         kassert(block_buffers[i]->flags & BLKBUFFER_FLAG_SYNCING);
@@ -145,6 +174,7 @@ ssize_t sync_block_buffer(struct block_buffer_desc_t* start, int timeout)
         kassert(block_buffers[i]->used_count != 0);
         --block_buffers[i]->used_count;
         block_buffers[i]->flags = block_buffers[i]->flags & BLKBUFFER_FLAG_UNSYNC ? BLKBUFFER_FLAG_UNSYNC : 0;
+        kcond_broadcast(&block_buffers[i]->op_cond);
         if(block_buffers[i]->used_count == 0)
         {
             if(block_buffers[i]->flags & BLKBUFFER_FLAG_UNSYNC)
@@ -173,7 +203,6 @@ ssize_t sync_block_buffer(struct block_buffer_desc_t* start, int timeout)
         }
     }
     ksemaphore_up(&blk_buffer_manager.inlist_sem, in_list_count);
-    unlock_task();
     return blk_read_ret;
 }
 
@@ -265,10 +294,10 @@ struct block_buffer_desc_t* get_block_buffer(uint16_t main_driver, uint16_t sub_
 
 void release_block_buffer(struct block_buffer_desc_t* blk)
 {
+    lock_task();
     --blk->used_count;
     if(blk->used_count == 0)
     {
-        kassert(!(blk->flags & BLKBUFFER_FLAG_UNSYNC));
         if(blk->flags & BLKBUFFER_FLAG_DIRTY)
             circular_list_insert(&blk_buffer_manager.dirty_list_head, &blk->list_node);
         else if(blk->flags & BLKBUFFER_FLAG_UNSYNC)
@@ -279,6 +308,47 @@ void release_block_buffer(struct block_buffer_desc_t* blk)
         else
             circular_list_insert(&blk_buffer_manager.sync_list_head, &blk->list_node);
     }
+    unlock_task();
+}
+
+struct block_buffer_desc_t* block_buffer_weak_pointer_get(struct block_buffer_weak_pointer_desc_t* weak_pointer, int timeout)
+{
+    lock_task();
+    if(weak_pointer->block_buffer == NULL
+        weak_pointer->driver_type != weak_pointer->block_buffer->driver_type ||
+        weak_pointer->block_no != weak_pointer->block_buffer->driver_type ||
+        weak_pointer->block_buffer->flags & BLKBUFFER_FLAG_UNSYNC
+        )
+        weak_pointer->block_buffer = get_block_buffer(weak_pointer->main_driver, weak_pointer->sub_driver, weak_pointer->block_no, timeout);
+    else
+    {
+        if(weak_pointer->block_buffer->used_count == 0)
+            circular_list_remove(&weak_pointer->block_buffer->list_node);
+        weak_pointer->block_buffer->op_time = jiffies;
+        ++weak_pointer->block_buffer->used_count;
+    }
+    unlock_task();
+    return weak_pointer->block_buffer;
+}
+
+struct block_buffer_desc_t* block_buffer_weak_pointer_batch_get(struct block_buffer_weak_pointer_desc_t* weak_pointer, size_t num)
+{
+    lock_task();
+    if(weak_pointer->block_buffers[num] == NULL
+        weak_pointer->driver_type != weak_pointer->block_buffers[num]->driver_type ||
+        weak_pointer->block_no != weak_pointer->block_buffers[num]->driver_type ||
+        weak_pointer->block_buffers[num]->flags & BLKBUFFER_FLAG_UNSYNC
+        )
+        weak_pointer->block_buffers[num] = get_block_buffer(weak_pointer->main_driver, weak_pointer->sub_driver, weak_pointer->block_no, timeout);
+    else
+    {
+        if(weak_pointer->block_buffers[num]->used_count == 0)
+            circular_list_remove(&weak_pointer->block_buffers[num]->list_node);
+        weak_pointer->block_buffers[num]->op_time = jiffies;
+        ++weak_pointer->block_buffers[num]->used_count;
+    }
+    unlock_task();
+    return weak_pointer->block_buffers[num];
 }
 
 void sys_test()
