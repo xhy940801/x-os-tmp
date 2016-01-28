@@ -571,6 +571,13 @@ int enumerating_ata_controller(union pci_configuration_space_desc_t* pci_info)
     return -1;
 }
 
+int hd_get_driver_info (uint16_t sub_driver, struct block_driver_info_t* driver_info)
+{
+    struct hd_info_t* hd_info = &hd_infos[sub_driver >> 2];
+    driver_info->driver_block_size = 512;
+    driver_info->driver_block_count = hd_info->hd_subdrivers[sub_driver & 0x03].len;
+}
+
 void init_hd_pci_info(struct hd_info_t* hd_info)
 {
     union pci_configuration_space_desc_t pci_info;

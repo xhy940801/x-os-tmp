@@ -336,10 +336,10 @@ struct block_buffer_desc_t* block_buffer_weak_pointer_batch_get(struct block_buf
     lock_task();
     if(weak_pointer->block_buffers[num] == NULL
         weak_pointer->driver_type != weak_pointer->block_buffers[num]->driver_type ||
-        weak_pointer->block_no != weak_pointer->block_buffers[num]->driver_type ||
+        weak_pointer->block_no + num != weak_pointer->block_buffers[num]->driver_type ||
         weak_pointer->block_buffers[num]->flags & BLKBUFFER_FLAG_UNSYNC
         )
-        weak_pointer->block_buffers[num] = get_block_buffer(weak_pointer->main_driver, weak_pointer->sub_driver, weak_pointer->block_no, timeout);
+        weak_pointer->block_buffers[num] = get_block_buffer(weak_pointer->main_driver, weak_pointer->sub_driver, weak_pointer->block_no + num, timeout);
     else
     {
         if(weak_pointer->block_buffers[num]->used_count == 0)

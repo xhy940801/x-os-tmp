@@ -44,6 +44,19 @@ int block_driver_write_blocks(struct block_buffer_desc_t* block_buffers[], size_
     return block_drivers[block_buffers[0]->main_driver]->write_blocks(block_buffers, count, timeout);
 }
 
+int block_driver_get_driver_info(uint16_t main_driver, uint16_t sub_driver, struct block_driver_info_t* driver_info)
+{
+    if(block_drivers[main_driver] == NULL)
+    {
+        return -1;
+    }
+    if(block_drivers[main_driver]->get_driver_info == NULL)
+    {
+        return -1;
+    }
+    return block_drivers[main_driver]->get_driver_info(sub_driver, driver_info);
+}
+
 size_t block_driver_get_max_read(uint16_t main_driver)
 {
     if(block_drivers[main_driver] == NULL)
