@@ -13,6 +13,7 @@
 #include "wait.h"
 #include "hd_driver.h"
 #include "block_buffer.h"
+#include "xfs.h"
 
 void print_mem_status()
 {
@@ -87,6 +88,7 @@ int main1()
     init_syscall_module();
     init_block_buffer_module();
     init_hd_driver_module();
+    init_xfs_module();
     
     uint32_t free_memsize = get_free_mem_size();
     printk("free memsize: %u B = %u MB\n", free_memsize, free_memsize / (1024 * 1024));

@@ -36,6 +36,12 @@ static ssize_t _vfs_default_write (struct vfs_inode_desc_t* inode, const char* b
     return -1;
 }
 
+static struct vfs_inode_desc_t* _vfs_default_get_root_inode (uint16_t main_driver, uint16_t sub_driver)
+{
+    cur_process->last_errno = EPERM;
+    return NULL;
+}
+
 static int _vfs_default_fsync (struct vfs_inode_desc_t* inode)
 {
     return 0;
@@ -89,6 +95,8 @@ int vfs_register(struct vfs_desc_t* vfs, size_t num)
         vfs->write = _vfs_default_write;
     if(vfs->fsync == NULL)
         vfs->fsync = _vfs_default_fsync;
+    if(vfs->get_root_inode == NULL)
+        vfs->get_root_inode = _vfs_default_get_root_inode;
 
     vfs_desc_points[num] = vfs;
     return 0;
@@ -97,7 +105,7 @@ int vfs_register(struct vfs_desc_t* vfs, size_t num)
 
 struct vfs_inode_desc_t* vfs_open_child (struct vfs_inode_desc_t* inode, const char* subpath, size_t len)
 {
-    struct vfs_desc_t* vfs = vfs_desc_points[inode->main_driver];
+    struct vfs_desc_t* vfs = vfs_desc_points[inode->fsys_type];
     if(vfs == NULL)
     {
         cur_process->last_errno = ENXIO;
@@ -113,7 +121,7 @@ struct vfs_inode_desc_t* vfs_open_child (struct vfs_inode_desc_t* inode, const c
 
 ssize_t vfs_read (struct vfs_inode_desc_t* inode, char* buf, size_t len)
 {
-    struct vfs_desc_t* vfs = vfs_desc_points[inode->main_driver];
+    struct vfs_desc_t* vfs = vfs_desc_points[inode->fsys_type];
     if(vfs == NULL)
     {
         cur_process->last_errno = ENXIO;
@@ -129,7 +137,7 @@ ssize_t vfs_read (struct vfs_inode_desc_t* inode, char* buf, size_t len)
 
 ssize_t vfs_write (struct vfs_inode_desc_t* inode, const char* buf, size_t len)
 {
-    struct vfs_desc_t* vfs = vfs_desc_points[inode->main_driver];
+    struct vfs_desc_t* vfs = vfs_desc_points[inode->fsys_type];
     if(vfs == NULL)
     {
         cur_process->last_errno = ENXIO;
@@ -138,15 +146,30 @@ ssize_t vfs_write (struct vfs_inode_desc_t* inode, const char* buf, size_t len)
     if(vfs->write == NULL)
     {
         cur_process->last_errno = EPERM;
-        while(1);
         return -1;
     }
     return vfs->write(inode, buf, len);
 }
 
+struct vfs_inode_desc_t* vfs_get_root_inode(uint32_t fsys_type, uint16_t main_driver, uint16_t sub_driver)
+{
+     struct vfs_desc_t* vfs = vfs_desc_points[fsys_type];
+    if(vfs == NULL)
+    {
+        cur_process->last_errno = ENXIO;
+        return NULL;
+    }
+    if(vfs->get_root_inode == NULL)
+    {
+        cur_process->last_errno = EPERM;
+        return NULL;
+    }
+    return vfs->get_root_inode(main_driver, sub_driver);
+}
+
 ssize_t vfs_fsync(struct vfs_inode_desc_t* inode)
 {
-    struct vfs_desc_t* vfs = vfs_desc_points[inode->main_driver];
+    struct vfs_desc_t* vfs = vfs_desc_points[inode->fsys_type];
     if(vfs == NULL)
     {
         cur_process->last_errno = ENXIO;
@@ -208,6 +231,8 @@ ssize_t fd_alloc(struct fd_info_t* fd_info)
 
 void vfs_bind_fd(int fd, uint32_t auth, struct vfs_inode_desc_t* inode, struct fd_info_t* fd_info)
 {
+    if(fd < fd_info->fd_size)
+        kassert(fd_info->fds[fd].inode == NULL);
     if(fd >= fd_info->fd_capacity)
     {
         int test_page;

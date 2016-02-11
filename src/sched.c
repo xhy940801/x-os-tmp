@@ -66,9 +66,8 @@ void turn_to_process1()
     process1page.process_info.rest_time = 5;
     
     init_fd_info(&process1page.process_info.fd_info);
-    vfs_bind_fd(1, VFS_FDAUTH_WRITE, get_tty0_inode(), &process1page.process_info.fd_info);
-    vfs_bind_fd(2, VFS_FDAUTH_WRITE, get_tty0_inode(), &process1page.process_info.fd_info);
-    process1page.process_info.fd_info.fd_size = 3;
+    vfs_bind_fd(1, VFS_FDAUTH_WRITE, vfs_get_root_inode(VFS_TYPE_TTY0, VFS_MDRIVER_TTY0, 0), &process1page.process_info.fd_info);
+    vfs_bind_fd(2, VFS_FDAUTH_WRITE, vfs_get_root_inode(VFS_TYPE_TTY0, VFS_MDRIVER_TTY0, 0), &process1page.process_info.fd_info);
 
     process1page.process_info.task_locker.lock_count = 1;
 

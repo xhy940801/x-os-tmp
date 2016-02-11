@@ -21,4 +21,3 @@ struct tty0_vfs_inode_desc_t
 };
 
 void init_tty0_module();
-struct vfs_inode_desc_t* get_tty0_inode();

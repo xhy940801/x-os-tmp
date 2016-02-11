@@ -314,7 +314,7 @@ void release_block_buffer(struct block_buffer_desc_t* blk)
 struct block_buffer_desc_t* block_buffer_weak_pointer_get(struct block_buffer_weak_pointer_desc_t* weak_pointer, int timeout)
 {
     lock_task();
-    if(weak_pointer->block_buffer == NULL
+    if(weak_pointer->block_buffer == NULL ||
         weak_pointer->driver_type != weak_pointer->block_buffer->driver_type ||
         weak_pointer->block_no != weak_pointer->block_buffer->driver_type ||
         weak_pointer->block_buffer->flags & BLKBUFFER_FLAG_UNSYNC
@@ -331,10 +331,10 @@ struct block_buffer_desc_t* block_buffer_weak_pointer_get(struct block_buffer_we
     return weak_pointer->block_buffer;
 }
 
-struct block_buffer_desc_t* block_buffer_weak_pointer_batch_get(struct block_buffer_weak_pointer_desc_t* weak_pointer, size_t num)
+struct block_buffer_desc_t* block_buffer_weak_pointer_batch_get(struct block_buffer_weak_pointer_batch_desc_t* weak_pointer, size_t num, int timeout)
 {
     lock_task();
-    if(weak_pointer->block_buffers[num] == NULL
+    if(weak_pointer->block_buffers[num] == NULL ||
         weak_pointer->driver_type != weak_pointer->block_buffers[num]->driver_type ||
         weak_pointer->block_no + num != weak_pointer->block_buffers[num]->driver_type ||
         weak_pointer->block_buffers[num]->flags & BLKBUFFER_FLAG_UNSYNC

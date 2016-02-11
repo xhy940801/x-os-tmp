@@ -84,20 +84,20 @@ void init_block_buffer_module();
 struct block_buffer_desc_t* get_block_buffer(uint16_t main_driver, uint16_t sub_driver, size_t block_no, int timeout);
 void release_block_buffer(struct block_buffer_desc_t* blk);
 struct block_buffer_desc_t* block_buffer_get_next_node(struct block_buffer_desc_t* node);
-int block_buffer_wait_op_finished(struct block_buffer_desc_t* start, int timeout)
+int block_buffer_wait_op_finished(struct block_buffer_desc_t* start, int timeout);
 int flush_block_buffer(struct block_buffer_desc_t* start, int timeout);
 int sync_block_buffer(struct block_buffer_desc_t* start, int timeout);
 
-struct block_buffer_desc_t* block_buffer_weak_pointer_get(struct block_buffer_weak_pointer_desc_t* weak_pointer);
+struct block_buffer_desc_t* block_buffer_weak_pointer_get(struct block_buffer_weak_pointer_desc_t* weak_pointer, int timeout);
 
-inline void block_buffer_weak_pointer_release(struct block_buffer_weak_pointer_desc_t* weak_pointer)
-{
-    release_block_buffer(weak_pointer->block_buffer);
-}
+// inline void block_buffer_weak_pointer_release(struct block_buffer_weak_pointer_desc_t* weak_pointer)
+// {
+//     release_block_buffer(weak_pointer->block_buffer);
+// }
 
-struct block_buffer_desc_t* block_buffer_weak_pointer_batch_get(struct block_buffer_weak_pointer_desc_t* weak_pointer, size_t num);
+struct block_buffer_desc_t* block_buffer_weak_pointer_batch_get(struct block_buffer_weak_pointer_batch_desc_t* weak_pointer, size_t num, int timeout);
 
-inline void block_buffer_weak_pointer_release(struct block_buffer_weak_pointer_desc_t* weak_pointer, size_t num)
-{
-    release_block_buffer(weak_pointer->block_buffers[num]);
-}
+// inline void block_buffer_weak_pointer_batch_release(struct block_buffer_weak_pointer_batch_desc_t* weak_pointer, size_t num)
+// {
+//     release_block_buffer(weak_pointer->block_buffers[num]);
+// }

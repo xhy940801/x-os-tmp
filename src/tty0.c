@@ -87,13 +87,19 @@ static int tty0_write(struct vfs_inode_desc_t* _inode, const char* buf, size_t l
     return i;
 }
 
+static struct vfs_inode_desc_t* get_tty0_inode(uint16_t main_driver, uint16_t sub_driver)
+{
+    return &tty0_inode.inode_base;
+}
+
 void init_tty0_module()
 {
     _memset(&tty0_vfs, 0, sizeof(tty0_vfs));
     tty0_vfs.name = "tty0";
     tty0_vfs.write = tty0_write;
+    tty0_vfs.get_root_inode = get_tty0_inode;
 
-    tty0_inode.inode_base.fsys_type = VFS_TYPE_NONE;
+    tty0_inode.inode_base.fsys_type = VFS_TYPE_TTY0;
     tty0_inode.inode_base.main_driver = VFS_MDRIVER_TTY0;
     tty0_inode.inode_base.sub_driver = 1;
     tty0_inode.inode_base.flags = VFS_MOD_UWRITE | VFS_MOD_GWRITE | VFS_MOD_OWRITE;
@@ -101,10 +107,5 @@ void init_tty0_module()
     tty0_inode.state = TTY0_STATE_NORMAL;
     tty0_inode.tty_base_addr = 0xfffb8000;
 
-    vfs_register(&tty0_vfs, VFS_MDRIVER_TTY0);
-}
-
-struct vfs_inode_desc_t* get_tty0_inode()
-{
-    return &tty0_inode.inode_base;
+    vfs_register(&tty0_vfs, VFS_TYPE_TTY0);
 }

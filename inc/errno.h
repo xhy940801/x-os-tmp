@@ -7,5 +7,6 @@ enum
     ENXIO       = 6,
     EAGAIN      = 11,
     ENOMEM      = 12,
+    ENODEV		= 19,
     ETIMEDOUT   = 110
 };
