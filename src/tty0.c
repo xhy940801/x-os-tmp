@@ -7,20 +7,29 @@
 #include "vfs.h"
 #include "task_locker.h"
 
+struct tty0_vfs_inode_desc_t
+{
+    struct vfs_inode_desc_t inode_base;
+    uint32_t pos;
+    char color;
+    uint32_t state;
+    uint32_t tty_base_addr;
+};
+
 static struct tty0_vfs_inode_desc_t tty0_inode;
 static struct vfs_desc_t tty0_vfs;
 
 static void _flush_cursor(struct tty0_vfs_inode_desc_t* inode)
 {
-    char* pos = (char*) (inode->tty_base_addr + (inode->inode_base.pos << 1));
+    char* pos = (char*) (inode->tty_base_addr + (inode->pos << 1));
     pos[1] = inode->color;
     _outb(0x3d4, 0x0f);
-    _outb(0x3d5, inode->inode_base.pos & 0xff);
+    _outb(0x3d5, inode->pos & 0xff);
     _outb(0x3d4, 0x0e);
-    _outb(0x3d5, (inode->inode_base.pos >> 8) & 0xff);
+    _outb(0x3d5, (inode->pos >> 8) & 0xff);
 }
 
-static int tty0_write(struct vfs_inode_desc_t* _inode, const char* buf, size_t len)
+static int tty0_write(struct vfs_inode_desc_t* _inode, const char* buf, size_t len, struct fd_struct_t* fd_struct)
 {
     struct tty0_vfs_inode_desc_t* inode = parentof(_inode, struct tty0_vfs_inode_desc_t, inode_base);
     size_t i;
@@ -41,40 +50,40 @@ static int tty0_write(struct vfs_inode_desc_t* _inode, const char* buf, size_t l
             }
             if(c == '\n')
             {
-                inode->inode_base.pos = (inode->inode_base.pos / 80 + 1) * 80;
+                inode->pos = (inode->pos / 80 + 1) * 80;
             }
             else if(c == '\b')
             {
-                char* pos = (char*) (inode->tty_base_addr + (inode->inode_base.pos << 1));
+                char* pos = (char*) (inode->tty_base_addr + (inode->pos << 1));
                 pos[0] = 0;
                 pos[1] = 0;
-                inode->inode_base.pos = inode->inode_base.pos > 0 ? inode->inode_base.pos - 1 : 0;
+                inode->pos = inode->pos > 0 ? inode->pos - 1 : 0;
             }
             else if(c == '\r')
-                inode->inode_base.pos = inode->inode_base.pos / 80 * 80;
+                inode->pos = inode->pos / 80 * 80;
             else if(c == '\0')
             {}
             else if(c == '\t')
-                inode->inode_base.pos = (inode->inode_base.pos & (~ 0x07)) + 8;
+                inode->pos = (inode->pos & (~ 0x07)) + 8;
             else if(c == '\v')
-                inode->inode_base.pos += 80;
+                inode->pos += 80;
             else if(c == '\f')
             {
                 _memset((void*) inode->tty_base_addr, 0x07000700, 4000);
-                inode->inode_base.pos = 0;
+                inode->pos = 0;
             }
             else
             {
-                char* pos = (char*) (inode->tty_base_addr + (inode->inode_base.pos << 1));
+                char* pos = (char*) (inode->tty_base_addr + (inode->pos << 1));
                 pos[0] = c;
                 pos[1] = inode->color;
-                ++inode->inode_base.pos;
+                ++inode->pos;
             }
-            while(inode->inode_base.pos >= 2000)
+            while(inode->pos >= 2000)
             {
                 _memmove((void*) inode->tty_base_addr, (void*) (inode->tty_base_addr + 160), 3840);
                 _memset((void*) inode->tty_base_addr + 3840, 0x07000700, 160);
-                inode->inode_base.pos -= 80;
+                inode->pos -= 80;
             }
         }
         else

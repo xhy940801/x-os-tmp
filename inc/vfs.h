@@ -10,10 +10,11 @@
 
 enum
 {
-    VFS_FDAUTH_EXEC     = 0x01,
-    VFS_FDAUTH_WRITE    = 0x02,
-    VFS_FDAUTH_READ     = 0x04,
-    VFS_FDAUTH_CLOSEONFORK  = 0x10
+    VFS_FDAUTH_EXEC     = 0x0001,
+    VFS_FDAUTH_WRITE    = 0x0002,
+    VFS_FDAUTH_READ     = 0x0004,
+    VFS_FDAUTH_APPEDN   = 0x0010,
+    VFS_FDAUTH_CLOSEONFORK  = 0x0100,
 };
 
 enum
@@ -48,6 +49,7 @@ struct fd_struct_t
 {
     struct vfs_inode_desc_t* inode;
     uint32_t auth;
+    uint32_t pos;
 };
 
 struct vfs_inode_desc_t
@@ -55,7 +57,6 @@ struct vfs_inode_desc_t
     uint32_t fsys_type;
     uint16_t main_driver;
     uint16_t sub_driver;
-    uint32_t pos;
     struct vfs_inode_desc_t* parent;
     struct vfs_inode_desc_t* brother;
     struct vfs_inode_desc_t* children;
@@ -69,10 +70,10 @@ struct vfs_desc_t
 {
     const char* name;
     struct vfs_inode_desc_t* (*open_child) (struct vfs_inode_desc_t* inode, const char* subpath, size_t len);
-    ssize_t (*read) (struct vfs_inode_desc_t* inode, char* buf, size_t len);
-    ssize_t (*write) (struct vfs_inode_desc_t* inode, const char* buf, size_t len);
+    ssize_t (*read) (struct vfs_inode_desc_t* inode, char* buf, size_t len, struct fd_struct_t* fd_struct);
+    ssize_t (*write) (struct vfs_inode_desc_t* inode, const char* buf, size_t len, struct fd_struct_t* fd_struct);
     struct vfs_inode_desc_t* (*get_root_inode) (uint16_t main_driver, uint16_t sub_driver);
-    int (*fsync) (struct vfs_inode_desc_t* inode);
+    int (*fsync) (struct vfs_inode_desc_t* inode, struct fd_struct_t* fd_struct);
 };
 
 struct fd_info_t
@@ -90,10 +91,10 @@ void init_vfs_module();
 int vfs_register(struct vfs_desc_t* vfs, size_t num);
 
 struct vfs_inode_desc_t* vfs_open_child (struct vfs_inode_desc_t* inode, const char* subpath, size_t len);
-ssize_t vfs_read (struct vfs_inode_desc_t* inode, char* buf, size_t len);
-ssize_t vfs_write (struct vfs_inode_desc_t* inode, const char* buf, size_t len);
+ssize_t vfs_read (struct vfs_inode_desc_t* inode, char* buf, size_t len, struct fd_struct_t* fd_struct);
+ssize_t vfs_write (struct vfs_inode_desc_t* inode, const char* buf, size_t len, struct fd_struct_t* fd_struct);
 struct vfs_inode_desc_t* vfs_get_root_inode(uint32_t fsys_type, uint16_t main_driver, uint16_t sub_driver);
-int vfs_fsync (struct vfs_inode_desc_t* inode);
+int vfs_fsync (struct vfs_inode_desc_t* inode, struct fd_struct_t* fd_struct);
 
 void init_fd_info(struct fd_info_t* fd_info);
 void release_fd_info(struct fd_info_t* fd_info);

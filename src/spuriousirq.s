@@ -2,7 +2,7 @@ global on_spurious_irq
 
 extern print_spurious_irq
 
-on_spurious_irq
+on_spurious_irq:
     iret
     push ds
     push es

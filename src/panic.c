@@ -18,7 +18,7 @@ void panic(const char* str)
 void _static_assert_func(const char* name, const char* file, unsigned int line, const char* func)
 {
     lock_task();
-    printk("\x1b\x0c""assertion \"%s\" failed: file \"%s\""
+    printk(P_LRED "assertion \"%s\" failed: file \"%s\""
             ", line %u, function: %s", name, file, line, func);
     while(1);
     unlock_task();
