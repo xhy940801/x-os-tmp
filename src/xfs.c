@@ -561,6 +561,35 @@ static inline struct block_buffer_desc_t* xfs_malloc_one_data_block(struct xfs_m
     return NULL;
 }
 
+static inline struct block_buffer_desc_t* xfs_try_append_one_data_block(
+    struct xfs_m_super_block_desc_t* m_super_block, uint16_t main_driver, uint16_t sub_driver, uint32_t block_no)
+{
+    ++block_no;
+    size_t bitmap_index = block_no / (4096 * 8);
+    struct block_buffer_desc_t* bitmap = xfs_block_buffer_weak_pointer_batch_get_without_unsync(&m_super_block->bitmaps, bitmap_index, 0);
+    if(bitmap == NULL)
+        return NULL;
+    uint8_t mask = 0x01 << (block_no % 8);
+    size_t pos = (block_no / 8) % 4096;
+    uint8_t* data = (uint8_t*) bitmap->buffer;
+    if(data[pos] & mask == 0)
+    {
+        data[pos] |= mask;
+        bitmap->flags |= BLKBUFFER_FLAG_DIRTY;
+        struct block_buffer_desc_t* block_buffer = xfs_block_buffer_without_syncing(main_driver, sub_driver, block_no, 0);
+        if(block_buffer == NULL)
+        {
+            data[pos] &= (~mask);
+            release_block_buffer(bitmap);
+            return NULL;
+        }
+        release_block_buffer(bitmap);
+        return block_buffer;
+    }
+    else
+        return xfs_malloc_one_data_block(m_super_block, main_driver, sub_driver);
+}
+
 static inline int xfs_free_one_block(struct xfs_m_super_block_desc_t* m_super_block, struct block_buffer_desc_t* block_buffer)
 {
     size_t bitmap_index = block_buffer->block_no / (4096 * 8);
@@ -618,6 +647,68 @@ static inline ssize_t xfs_inode_uplevel_from_level0(volatile struct xfs_m_inode_
     block_buffer->flags |= BLKBUFFER_FLAG_DIRTY;
     main_inode_buffer->flags |= BLKBUFFER_FLAG_DIRTY;
     return len;
+}
+
+static inline ssize_t xfs_inode_append_write_level0(volatile struct xfs_m_inode_desc_t* inode, char* buf, size_t len, struct fd_struct_t* fd_struct)
+{
+    struct block_buffer_desc_t* main_inode_buffer = xfs_block_buffer_weak_pointer_get_without_unsync(&inode->main_inode, 0);
+    if(main_inode_buffer == NULL)
+        return -1;
+    size_t inode_level = (inode->inode_base.flags << 24) & 0x0f;
+    if(inode_level != 0)
+    {
+        release_block_buffer(main_inode_buffer);
+        return -2;
+    }
+    size_t pos = inode->size;
+    if(pos + len > 4096 - sizeof(struct xfs_hd_inode_desc_t))
+    {
+        release_block_buffer(main_inode_buffer);
+        return -2;
+    }
+    struct xfs_hd_inode_desc_t* hd_inode = (struct xfs_hd_inode_desc_t*) main_inode_buffer->buffer;
+    _memcpy(buf, &hd_inode->data[pos], len);
+    inode->size += len;
+    release_block_buffer(main_inode_buffer);
+    return (ssize_t) len;
+}
+
+static inline ssize_t xfs_inode_append_write_level1(volatile struct xfs_m_inode_desc_t* inode, char* buf, size_t len, struct fd_struct_t* fd_struct)
+{
+    size_t pos = inode->size;
+    if((pos & (~(4096 - 1))) != inode->last_used_block_start)
+    {
+        struct block_buffer_desc_t* main_inode_buffer = xfs_block_buffer_weak_pointer_get_without_unsync(&inode->main_inode, 0);
+        if(main_inode_buffer == NULL)
+            return -1;
+        size_t inode_level = (inode->inode_base.flags << 24) & 0x0f;
+        if(inode_level != 1)
+        {
+            release_block_buffer(main_inode_buffer);
+            return -2;
+        }
+        struct xfs_hd_inode_desc_t* hd_inode = (struct xfs_hd_inode_desc_t*) main_inode_buffer->buffer;
+        size_t inode_pos = 0;
+        int32_t target_lba;
+        size_t i;
+        for(i = 0; ; ++i)
+        {
+            if(hd_inode->clauses[i].inode_count == 0)
+            {
+                target_lba = hd_inode->clauses[i].start_offset;
+                break;
+            }
+            inode_pos += 4096 * hd_inode->clauses[i].inode_count;
+        }
+
+        pos = inode->size;
+
+        // target_lba += ((int32_t) main_inode_buffer->block_no) * 4096;
+        // target_lba += (int32_t) (fd_struct->pos - inode_pos);
+        // inode->last_used_block_start = fd_struct->pos & (~(4096 - 1));
+        // inode->last_used_block.block_no = target_lba / 4096;
+        // release_block_buffer(main_inode_buffer);
+    }
 }
 
 static inline ssize_t xfs_inode_append_write_once(volatile struct xfs_m_inode_desc_t* inode, char* buf, size_t len, struct fd_struct_t* fd_struct)
