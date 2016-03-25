@@ -639,8 +639,8 @@ static inline ssize_t xfs_inode_uplevel_from_level0(volatile struct xfs_m_inode_
     char* data = (char*) block_buffer->buffer;
     _memcpy(data, hd_inode->data, size);
     len = len + size > 4096 ? 4096 - size : len;
-    _memcpy(data, buf, len);
-    hd_inode->clauses[0].inode_count = 1;
+    _memcpy(data + size, buf, len);
+    hd_inode->clauses[0].inode_count = 0;
     hd_inode->clauses[0].start_offset = (int32_t) (block_buffer->block_no * 4096);
     hd_inode->clauses[0].start_offset -= (int32_t) (main_inode_buffer->block_no * 4096);
     block_buffer->flags &= (^BLKBUFFER_FLAG_UNSYNC);
